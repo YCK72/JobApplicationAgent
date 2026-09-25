@@ -40,7 +40,9 @@ def role_config():
 
 @pytest.fixture
 def job_filter(role_config):
-    return JobFilter(role_config)
+    return JobFilter(
+        role_config
+    )
 
 
 def make_job(
@@ -59,44 +61,79 @@ def make_job(
     )
 
 
-def test_junior_title_is_entry_level(job_filter):
+def test_junior_title_is_entry_level(
+    job_filter,
+):
     result = job_filter.classify_seniority(
-        make_job("Junior Software Engineer")
+        make_job(
+            "Junior Software Engineer"
+        )
     )
 
-    assert result.seniority == SeniorityLevel.ENTRY_LEVEL
-
-
-def test_new_grad_title_is_entry_level(job_filter):
-    result = job_filter.classify_seniority(
-        make_job("New Grad Software Engineer")
+    assert (
+        result.seniority
+        == SeniorityLevel.ENTRY_LEVEL
     )
 
-    assert result.seniority == SeniorityLevel.ENTRY_LEVEL
 
-
-def test_software_engineer_i_is_entry_level(job_filter):
+def test_new_grad_title_is_entry_level(
+    job_filter,
+):
     result = job_filter.classify_seniority(
-        make_job("Software Engineer I")
+        make_job(
+            "New Grad Software Engineer"
+        )
     )
 
-    assert result.seniority == SeniorityLevel.ENTRY_LEVEL
-
-
-def test_associate_title_is_early_career(job_filter):
-    result = job_filter.classify_seniority(
-        make_job("Associate Data Scientist")
+    assert (
+        result.seniority
+        == SeniorityLevel.ENTRY_LEVEL
     )
 
-    assert result.seniority == SeniorityLevel.EARLY_CAREER
 
-
-def test_senior_title_is_senior(job_filter):
+def test_software_engineer_i_is_entry_level(
+    job_filter,
+):
     result = job_filter.classify_seniority(
-        make_job("Senior Software Engineer")
+        make_job(
+            "Software Engineer I"
+        )
     )
 
-    assert result.seniority == SeniorityLevel.SENIOR
+    assert (
+        result.seniority
+        == SeniorityLevel.ENTRY_LEVEL
+    )
+
+
+def test_associate_title_is_early_career(
+    job_filter,
+):
+    result = job_filter.classify_seniority(
+        make_job(
+            "Associate Data Scientist"
+        )
+    )
+
+    assert (
+        result.seniority
+        == SeniorityLevel.EARLY_CAREER
+    )
+
+
+def test_senior_title_is_senior(
+    job_filter,
+):
+    result = job_filter.classify_seniority(
+        make_job(
+            "Senior Software Engineer"
+        )
+    )
+
+    assert (
+        result.seniority
+        == SeniorityLevel.SENIOR
+    )
 
 
 @pytest.mark.parametrize(
@@ -114,21 +151,125 @@ def test_excluded_titles_are_senior(
     title,
 ):
     result = job_filter.classify_seniority(
-        make_job(title)
+        make_job(
+            title
+        )
     )
 
-    assert result.seniority == SeniorityLevel.SENIOR
+    assert (
+        result.seniority
+        == SeniorityLevel.SENIOR
+    )
 
 
-def test_level_ii_is_mid_level(job_filter):
+# ============================================================
+# Sr / Sr. abbreviation regression tests
+# ============================================================
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Sr Software Engineer",
+        "Sr. Software Engineer",
+    ],
+)
+def test_sr_abbreviation_is_senior(
+    job_filter,
+    title,
+):
     result = job_filter.classify_seniority(
-        make_job("Software Engineer II")
+        make_job(
+            title
+        )
     )
 
-    assert result.seniority == SeniorityLevel.MID_LEVEL
+    assert (
+        result.seniority
+        == SeniorityLevel.SENIOR
+    )
+
+    assert result.matched_signal == "sr"
 
 
-def test_two_years_required_is_early_career(job_filter):
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Sr/Principal Software Engineer",
+        "Sr./Principal Software Engineer",
+    ],
+)
+def test_sr_principal_title_is_senior(
+    job_filter,
+    title,
+):
+    result = job_filter.classify_seniority(
+        make_job(
+            title
+        )
+    )
+
+    # Either "sr" or "principal" is valid evidence.
+    # The important contract is that the job is classified
+    # as senior.
+    assert (
+        result.seniority
+        == SeniorityLevel.SENIOR
+    )
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Software Engineer",
+        "Site Reliability Engineer",
+        "Research Engineer",
+    ],
+)
+def test_unrelated_titles_do_not_match_sr_abbreviation(
+    job_filter,
+    title,
+):
+    result = job_filter.classify_seniority(
+        make_job(
+            title
+        )
+    )
+
+    assert (
+        result.seniority
+        != SeniorityLevel.SENIOR
+    )
+
+
+# ============================================================
+# Level classification
+# ============================================================
+
+
+def test_level_ii_is_mid_level(
+    job_filter,
+):
+    result = job_filter.classify_seniority(
+        make_job(
+            "Software Engineer II"
+        )
+    )
+
+    assert (
+        result.seniority
+        == SeniorityLevel.MID_LEVEL
+    )
+
+
+# ============================================================
+# Required experience
+# ============================================================
+
+
+def test_two_years_required_is_early_career(
+    job_filter,
+):
     job = make_job(
         description=(
             "Candidates must have a minimum of "
@@ -136,24 +277,38 @@ def test_two_years_required_is_early_career(job_filter):
         )
     )
 
-    result = job_filter.classify_seniority(job)
+    result = job_filter.classify_seniority(
+        job
+    )
 
-    assert result.seniority == SeniorityLevel.EARLY_CAREER
+    assert (
+        result.seniority
+        == SeniorityLevel.EARLY_CAREER
+    )
 
 
-def test_three_years_required_is_mid_level(job_filter):
+def test_three_years_required_is_mid_level(
+    job_filter,
+):
     job = make_job(
         description=(
             "Minimum 3 years of experience required."
         )
     )
 
-    result = job_filter.classify_seniority(job)
+    result = job_filter.classify_seniority(
+        job
+    )
 
-    assert result.seniority == SeniorityLevel.MID_LEVEL
+    assert (
+        result.seniority
+        == SeniorityLevel.MID_LEVEL
+    )
 
 
-def test_five_plus_years_required_is_mid_level(job_filter):
+def test_five_plus_years_required_is_mid_level(
+    job_filter,
+):
     job = make_job(
         description=(
             "5+ years of experience required "
@@ -161,98 +316,202 @@ def test_five_plus_years_required_is_mid_level(job_filter):
         )
     )
 
-    result = job_filter.classify_seniority(job)
+    result = job_filter.classify_seniority(
+        job
+    )
 
-    assert result.seniority == SeniorityLevel.MID_LEVEL
+    assert (
+        result.seniority
+        == SeniorityLevel.MID_LEVEL
+    )
 
 
-def test_preferred_experience_does_not_reject(job_filter):
+def test_preferred_experience_does_not_reject(
+    job_filter,
+):
     job = make_job(
         description=(
             "3+ years of experience preferred."
         )
     )
 
-    result = job_filter.evaluate(job)
-
-    assert result.keep is True
-    assert result.seniority == SeniorityLevel.UNKNOWN
-
-
-def test_unknown_seniority_is_kept(job_filter):
     result = job_filter.evaluate(
-        make_job("Software Engineer")
+        job
     )
 
     assert result.keep is True
-    assert result.seniority == SeniorityLevel.UNKNOWN
+
+    assert (
+        result.seniority
+        == SeniorityLevel.UNKNOWN
+    )
 
 
-def test_senior_job_is_filtered(job_filter):
+# ============================================================
+# Unknown seniority
+# ============================================================
+
+
+def test_unknown_seniority_is_kept(
+    job_filter,
+):
     result = job_filter.evaluate(
-        make_job("Senior Software Engineer")
+        make_job(
+            "Software Engineer"
+        )
+    )
+
+    assert result.keep is True
+
+    assert (
+        result.seniority
+        == SeniorityLevel.UNKNOWN
+    )
+
+
+# ============================================================
+# Filtering behavior
+# ============================================================
+
+
+def test_senior_job_is_filtered(
+    job_filter,
+):
+    result = job_filter.evaluate(
+        make_job(
+            "Senior Software Engineer"
+        )
     )
 
     assert result.keep is False
-    assert result.seniority == SeniorityLevel.SENIOR
+
+    assert (
+        result.seniority
+        == SeniorityLevel.SENIOR
+    )
 
 
-def test_mid_level_job_is_filtered(job_filter):
+def test_mid_level_job_is_filtered(
+    job_filter,
+):
     job = make_job(
         description=(
             "Minimum 4 years of experience required."
         )
     )
 
-    result = job_filter.evaluate(job)
+    result = job_filter.evaluate(
+        job
+    )
 
     assert result.keep is False
-    assert result.seniority == SeniorityLevel.MID_LEVEL
+
+    assert (
+        result.seniority
+        == SeniorityLevel.MID_LEVEL
+    )
 
 
-def test_other_category_is_filtered(job_filter):
+def test_other_category_is_filtered(
+    job_filter,
+):
     job = make_job(
         title="Account Executive",
         category=JobCategory.OTHER,
     )
 
-    result = job_filter.evaluate(job)
+    result = job_filter.evaluate(
+        job
+    )
 
     assert result.keep is False
     assert "OTHER" in result.reason
 
 
-def test_filter_job_updates_seniority(job_filter):
-    job = make_job("Junior Software Engineer")
+# ============================================================
+# Job mutation behavior
+# ============================================================
 
-    returned_job = job_filter.filter_job(job)
+
+def test_filter_job_updates_seniority(
+    job_filter,
+):
+    job = make_job(
+        "Junior Software Engineer"
+    )
+
+    returned_job = job_filter.filter_job(
+        job
+    )
 
     assert returned_job is job
-    assert job.seniority == SeniorityLevel.ENTRY_LEVEL
-    assert job.status == ApplicationStatus.DISCOVERED
+
+    assert (
+        job.seniority
+        == SeniorityLevel.ENTRY_LEVEL
+    )
+
+    assert (
+        job.status
+        == ApplicationStatus.DISCOVERED
+    )
 
 
-def test_filter_job_marks_rejected_job_filtered(job_filter):
-    job = make_job("Senior Software Engineer")
+def test_filter_job_marks_rejected_job_filtered(
+    job_filter,
+):
+    job = make_job(
+        "Senior Software Engineer"
+    )
 
-    job_filter.filter_job(job)
+    job_filter.filter_job(
+        job
+    )
 
-    assert job.seniority == SeniorityLevel.SENIOR
-    assert job.status == ApplicationStatus.FILTERED_OUT
+    assert (
+        job.seniority
+        == SeniorityLevel.SENIOR
+    )
+
+    assert (
+        job.status
+        == ApplicationStatus.FILTERED_OUT
+    )
+
     assert job.notes is not None
     assert "Filter:" in job.notes
 
 
-def test_existing_notes_are_preserved(job_filter):
-    job = make_job("Senior Software Engineer")
-    job.notes = "Discovered from company careers page."
+def test_existing_notes_are_preserved(
+    job_filter,
+):
+    job = make_job(
+        "Senior Software Engineer"
+    )
 
-    job_filter.filter_job(job)
+    job.notes = (
+        "Discovered from company careers page."
+    )
 
-    assert "Discovered from company careers page." in job.notes
+    job_filter.filter_job(
+        job
+    )
+
+    assert (
+        "Discovered from company careers page."
+        in job.notes
+    )
+
     assert "Filter:" in job.notes
 
 
+# ============================================================
+# Configuration validation
+# ============================================================
+
+
 def test_invalid_configuration_rejected():
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError
+    ):
         JobFilter({})

@@ -121,12 +121,18 @@ class JobFilter:
             return ""
 
         normalized = value.lower().strip()
+
         normalized = re.sub(
             r"[^a-z0-9+#./–—-]+",
             " ",
             normalized,
         )
-        normalized = re.sub(r"\s+", " ", normalized)
+
+        normalized = re.sub(
+            r"\s+",
+            " ",
+            normalized,
+        )
 
         return normalized.strip()
 
@@ -144,7 +150,10 @@ class JobFilter:
             + r"(?![a-z0-9])"
         )
 
-        return re.search(pattern, text) is not None
+        return re.search(
+            pattern,
+            text,
+        ) is not None
 
     def _find_signal(
         self,
@@ -152,7 +161,10 @@ class JobFilter:
         signals: tuple[str, ...],
     ) -> Optional[str]:
         for signal in signals:
-            if self._contains_phrase(text, signal):
+            if self._contains_phrase(
+                text,
+                signal,
+            ):
                 return signal
 
         return None
@@ -166,7 +178,7 @@ class JobFilter:
         statements.
 
         Examples:
-            "3+ years required" -> 3
+            "3+ years of experience required" -> 3
             "minimum 4 years of experience" -> 4
             "requires 5 years of experience" -> 5
             "3-5 years of experience required" -> 3
@@ -210,7 +222,9 @@ class JobFilter:
                 text,
                 flags=re.IGNORECASE,
             ):
-                matches.append(int(match.group(1)))
+                matches.append(
+                    int(match.group(1))
+                )
 
         if not matches:
             return None
@@ -261,10 +275,17 @@ class JobFilter:
         Explicit senior title signals take highest priority.
         """
 
-        title = self._normalize_text(job.title)
+        title = self._normalize_text(
+            job.title
+        )
+
         description = self._normalize_text(
             job.description
         )
+
+        # ----------------------------------------------------
+        # Explicit configured senior title signals
+        # ----------------------------------------------------
 
         senior_signal = self._find_signal(
             title,
@@ -281,7 +302,37 @@ class JobFilter:
                 matched_signal=senior_signal,
             )
 
-        # Handle common Level II+ title forms.
+        # ----------------------------------------------------
+        # Common "Sr" / "Sr." abbreviation
+        # ----------------------------------------------------
+        #
+        # Use explicit boundaries instead of substring matching.
+        #
+        # Matches:
+        #     Sr Software Engineer
+        #     Sr. Software Engineer
+        #     Sr/Software Engineer
+        #
+        # Does not match unrelated words merely containing "sr".
+        # ----------------------------------------------------
+
+        if re.search(
+            r"(?<![a-z0-9])sr\.?(?![a-z0-9])",
+            title,
+        ):
+            return SeniorityResult(
+                seniority=SeniorityLevel.SENIOR,
+                reason=(
+                    "Job title contains the senior "
+                    "abbreviation 'Sr'."
+                ),
+                matched_signal="sr",
+            )
+
+        # ----------------------------------------------------
+        # Level II+
+        # ----------------------------------------------------
+
         if re.search(
             r"\b(?:engineer|developer|scientist|analyst)"
             r"\s+(?:ii|iii|iv|v)\b",
@@ -296,6 +347,10 @@ class JobFilter:
                 matched_signal="level ii+",
             )
 
+        # ----------------------------------------------------
+        # Level I
+        # ----------------------------------------------------
+
         if re.search(
             r"\b(?:engineer|developer|scientist|analyst)"
             r"\s+(?:1|i)\b",
@@ -303,11 +358,20 @@ class JobFilter:
         ):
             return SeniorityResult(
                 seniority=SeniorityLevel.ENTRY_LEVEL,
-                reason="Job title indicates Level I.",
+                reason=(
+                    "Job title indicates Level I."
+                ),
                 matched_signal="level i",
             )
 
-        if self._contains_phrase(title, "junior"):
+        # ----------------------------------------------------
+        # Junior
+        # ----------------------------------------------------
+
+        if self._contains_phrase(
+            title,
+            "junior",
+        ):
             return SeniorityResult(
                 seniority=SeniorityLevel.ENTRY_LEVEL,
                 reason=(
@@ -316,8 +380,15 @@ class JobFilter:
                 matched_signal="junior",
             )
 
+        # ----------------------------------------------------
+        # New graduate
+        # ----------------------------------------------------
+
         if (
-            self._contains_phrase(title, "new grad")
+            self._contains_phrase(
+                title,
+                "new grad",
+            )
             or self._contains_phrase(
                 title,
                 "new graduate",
@@ -331,7 +402,14 @@ class JobFilter:
                 matched_signal="new grad",
             )
 
-        if self._contains_phrase(title, "entry level"):
+        # ----------------------------------------------------
+        # Entry level
+        # ----------------------------------------------------
+
+        if self._contains_phrase(
+            title,
+            "entry level",
+        ):
             return SeniorityResult(
                 seniority=SeniorityLevel.ENTRY_LEVEL,
                 reason=(
@@ -340,8 +418,15 @@ class JobFilter:
                 matched_signal="entry level",
             )
 
+        # ----------------------------------------------------
+        # Associate / early career
+        # ----------------------------------------------------
+
         if (
-            self._contains_phrase(title, "associate")
+            self._contains_phrase(
+                title,
+                "associate",
+            )
             or self._contains_phrase(
                 title,
                 "early career",
@@ -361,6 +446,10 @@ class JobFilter:
                     else "early career"
                 ),
             )
+
+        # ----------------------------------------------------
+        # Required experience
+        # ----------------------------------------------------
 
         required_years = self._extract_required_experience(
             description
@@ -390,6 +479,10 @@ class JobFilter:
                 ),
             )
 
+        # ----------------------------------------------------
+        # Configured preferred early-career title signals
+        # ----------------------------------------------------
+
         preferred_signal = self._find_signal(
             title,
             self.preferred_signals,
@@ -404,6 +497,10 @@ class JobFilter:
                 ),
                 matched_signal=preferred_signal,
             )
+
+        # ----------------------------------------------------
+        # Unknown
+        # ----------------------------------------------------
 
         return SeniorityResult(
             seniority=SeniorityLevel.UNKNOWN,
@@ -420,16 +517,25 @@ class JobFilter:
         Decide whether a job should continue through the pipeline.
         """
 
-        seniority_result = self.classify_seniority(job)
+        seniority_result = self.classify_seniority(
+            job
+        )
 
+        # Unsupported role category.
         if job.category == JobCategory.OTHER:
             return FilterResult(
                 keep=False,
-                reason="Unsupported role category: OTHER.",
+                reason=(
+                    "Unsupported role category: OTHER."
+                ),
                 seniority=seniority_result.seniority,
             )
 
-        if seniority_result.seniority == SeniorityLevel.SENIOR:
+        # Explicit senior role.
+        if (
+            seniority_result.seniority
+            == SeniorityLevel.SENIOR
+        ):
             return FilterResult(
                 keep=False,
                 reason=(
@@ -439,7 +545,11 @@ class JobFilter:
                 seniority=seniority_result.seniority,
             )
 
-        if seniority_result.seniority == SeniorityLevel.MID_LEVEL:
+        # Explicit mid-level role.
+        if (
+            seniority_result.seniority
+            == SeniorityLevel.MID_LEVEL
+        ):
             return FilterResult(
                 keep=False,
                 reason=(
@@ -458,25 +568,35 @@ class JobFilter:
             seniority=seniority_result.seniority,
         )
 
-    def filter_job(self, job: Job) -> Job:
+    def filter_job(
+        self,
+        job: Job,
+    ) -> Job:
         """
         Apply seniority classification and filtering to a Job.
 
         Filtered jobs remain trackable rather than being discarded.
         """
 
-        result = self.evaluate(job)
+        result = self.evaluate(
+            job
+        )
 
         job.seniority = result.seniority
 
         if not result.keep:
-            job.status = ApplicationStatus.FILTERED_OUT
+            job.status = (
+                ApplicationStatus.FILTERED_OUT
+            )
 
             if job.notes:
                 job.notes = (
-                    f"{job.notes}\nFilter: {result.reason}"
+                    f"{job.notes}\n"
+                    f"Filter: {result.reason}"
                 )
             else:
-                job.notes = f"Filter: {result.reason}"
+                job.notes = (
+                    f"Filter: {result.reason}"
+                )
 
         return job

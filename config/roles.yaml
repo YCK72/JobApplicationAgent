@@ -115,6 +115,66 @@ categories:
     resume: "it"
 
 
+classification_exclusions:
+
+  # These signals identify occupations outside the target role
+  # categories.
+  #
+  # They are checked only after configured technical title matching
+  # succeeds or fails. This allows titles such as:
+  #
+  #   Data Scientist, Marketing Analytics
+  #
+  # to remain valid technical roles while preventing:
+  #
+  #   Marketing Manager
+  #   Strategic Account Executive
+  #
+  # from becoming technical roles because their descriptions mention
+  # Python, SQL, machine learning, or similar technologies.
+
+  non_target_title_signals:
+    - "account executive"
+    - "sales"
+    - "sales representative"
+    - "sales development representative"
+    - "business development representative"
+    - "marketing"
+    - "recruiter"
+    - "recruiting"
+    - "talent acquisition"
+    - "human resources"
+    - "executive assistant"
+    - "customer success"
+    - "finance"
+    - "financial analyst"
+    - "legal"
+    - "counsel"
+
+  # These signals identify postings that are not specific job
+  # vacancies.
+  #
+  # Unlike non-target occupations, these are checked BEFORE technical
+  # title matching. A posting such as:
+  #
+  #   Software Engineer Talent Community
+  #
+  # contains a legitimate technical title but is still not a specific
+  # opening and must not enter the automatic application workflow.
+
+  non_job_title_signals:
+    - "talent community"
+    - "talent network"
+    - "join our talent community"
+    - "general application"
+    - "general interest"
+    - "open application"
+    - "future opportunities"
+    - "future opportunity"
+    - "expression of interest"
+    - "don't see a fit"
+
+
 seniority:
 
   preferred:
