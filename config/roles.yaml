@@ -1,3 +1,36 @@
+location:
+
+  allowed_country: "United States"
+
+  country_aliases:
+    - "United States"
+    - "USA"
+    - "U.S."
+    - "U.S.A."
+
+  allow_us_states: true
+
+  allow_remote_us: true
+
+  allow_unknown: false
+
+  excluded_location_signals:
+    - "Global"
+    - "International"
+    - "Worldwide"
+    - "EMEA"
+    - "Europe"
+    - "European Union"
+    - "APAC"
+    - "Asia"
+    - "India"
+    - "Portugal"
+    - "Canada"
+    - "Mexico"
+    - "United Kingdom"
+    - "UK"
+    - "Australia"
+
 categories:
 
   SDE:
