@@ -8,8 +8,8 @@ from app.discovery.greenhouse import (
 
 # Change these two values when testing another public
 # Greenhouse board.
-COMPANY = "OpenAI"
-BOARD_TOKEN = "openai"
+COMPANY = "SingleStore"
+BOARD_TOKEN = "singlestore"
 
 # We deliberately display only a small sample.
 SAMPLE_SIZE = 5

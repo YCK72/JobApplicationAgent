@@ -557,3 +557,72 @@ def test_invalid_job_entry_is_rejected():
             match="invalid job payload",
         ):
             source.discover()
+
+def test_html_description_is_converted_to_plain_text():
+    source = make_source()
+
+    payload = make_payload()
+    payload["content"] = """
+        <div>
+            <h2>About the Role</h2>
+            <p>Build scalable <strong>Python</strong> services.</p>
+            <ul>
+                <li>Design APIs</li>
+                <li>Write tests</li>
+            </ul>
+        </div>
+    """
+
+    raw_job = source.normalize_payload(payload)
+
+    assert raw_job.description == (
+        "About the Role "
+        "Build scalable Python services. "
+        "Design APIs Write tests"
+    )
+
+
+def test_html_entities_are_decoded_in_description():
+    source = make_source()
+
+    payload = make_payload()
+    payload["content"] = (
+        "<p>Python &amp; machine learning</p>"
+    )
+
+    raw_job = source.normalize_payload(payload)
+
+    assert raw_job.description == (
+        "Python & machine learning"
+    )
+
+
+def test_whitespace_is_normalized_in_description():
+    source = make_source()
+
+    payload = make_payload()
+    payload["content"] = """
+        <p>
+            Build     scalable
+            backend     systems.
+        </p>
+    """
+
+    raw_job = source.normalize_payload(payload)
+
+    assert raw_job.description == (
+        "Build scalable backend systems."
+    )
+
+
+def test_empty_html_description_becomes_none():
+    source = make_source()
+
+    payload = make_payload()
+    payload["content"] = (
+        "<div>   </div><p></p>"
+    )
+
+    raw_job = source.normalize_payload(payload)
+
+    assert raw_job.description is None

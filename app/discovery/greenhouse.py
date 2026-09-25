@@ -5,6 +5,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from bs4 import BeautifulSoup
+
 from app.discovery.base import JobSource, RawJobPosting
 from app.jobs.models import Job
 
@@ -56,6 +58,31 @@ class GreenhouseJobSource(JobSource):
         self.company = company
         self.board_token = board_token
         self.timeout_seconds = float(timeout_seconds)
+
+    @staticmethod
+    def _clean_description(content: Any) -> str | None:
+        """
+        Convert Greenhouse HTML job content into normalized plain text.
+
+        Greenhouse commonly returns the job description as HTML. The rest of
+        the application should work with readable text rather than HTML markup.
+
+        Empty or non-string content is normalized to None.
+        """
+        if not isinstance(content, str) or not content.strip():
+            return None
+
+        soup = BeautifulSoup(content, "html.parser")
+
+        text = soup.get_text(
+            separator=" ",
+            strip=True,
+        )
+
+        if not text:
+            return None
+
+        return " ".join(text.split())
 
     @property
     def source_name(self) -> str:
@@ -200,10 +227,9 @@ class GreenhouseJobSource(JobSource):
             if isinstance(location_name, str) and location_name.strip():
                 location = location_name.strip()
 
-        description = payload.get("content")
-
-        if not isinstance(description, str) or not description.strip():
-            description = None
+        description = self._clean_description(
+            payload.get("content")
+        )
 
         updated_at = payload.get("updated_at")
 
