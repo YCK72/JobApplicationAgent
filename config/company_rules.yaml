@@ -1,111 +1,166 @@
 default_rule: AUTO
 
-manual_companies:
-
+companies:
   Microsoft:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "microsoft"
-      - "microsoft corporation"
+      - microsoft
+      - microsoft corporation
+      - microsoft corp
 
   Amazon:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "amazon"
-      - "amazon.com"
-      - "amazon web services"
-      - "aws"
-      - "amazon development center"
+      - amazon
+      - amazon.com
+      - amazon web services
+      - aws
+      - amazon development center
 
   Apple:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "apple"
-      - "apple inc"
+      - apple
+      - apple inc
+      - apple inc.
 
   Google:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "google"
-      - "google llc"
-      - "google deepmind"
+      - google
+      - google llc
+      - google deepmind
 
   Meta:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "meta"
-      - "meta platforms"
-      - "facebook"
+      - meta
+      - meta platforms
+      - meta platforms inc
+      - facebook
 
   NVIDIA:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "nvidia"
-      - "nvidia corporation"
+      - nvidia
+      - nvidia corporation
 
   Tesla:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "tesla"
-      - "tesla inc"
+      - tesla
+      - tesla inc
+      - tesla motors
 
   OpenAI:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "openai"
+      - openai
 
   Anthropic:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "anthropic"
+      - anthropic
 
   Netflix:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "netflix"
+      - netflix
 
   Salesforce:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "salesforce"
+      - salesforce
+      - salesforce inc
 
   Adobe:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "adobe"
+      - adobe
+      - adobe inc
 
   Oracle:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "oracle"
+      - oracle
+      - oracle corporation
 
   Cisco:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "cisco"
+      - cisco
+      - cisco systems
 
   Intel:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "intel"
+      - intel
+      - intel corporation
 
   AMD:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "amd"
-      - "advanced micro devices"
+      - amd
+      - advanced micro devices
 
   Qualcomm:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "qualcomm"
+      - qualcomm
+      - qualcomm technologies
 
   Uber:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "uber"
+      - uber
+      - uber technologies
 
   Airbnb:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "airbnb"
+      - airbnb
 
   LinkedIn:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "linkedin"
+      - linkedin
+      - linkedin corporation
 
   Stripe:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "stripe"
+      - stripe
 
   Databricks:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "databricks"
+      - databricks
 
   Snowflake:
+    rule: MANUAL
+    priority: true
     aliases:
-      - "snowflake"
-
-
-blocked_companies: {}
+      - snowflake
+      - snowflake inc
