@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from app.scoring.fit_gate import FitGate
 from app.applications.resume_router import ResumeRouter
 from app.jobs.classifier import RoleClassifier
 from app.jobs.company_router import CompanyRouter
@@ -54,6 +55,41 @@ def company_rules():
 @pytest.fixture
 def roles_config():
     return {
+        "fit_scoring": {
+            "auto_ready_minimum": 70,
+            "manual_review_minimum": 50,
+        },
+
+        "location": {
+            "allowed_country": "United States",
+            "country_aliases": [
+                "United States",
+                "USA",
+                "U.S.",
+                "U.S.A.",
+            ],
+            "allow_us_states": True,
+            "allow_remote_us": True,
+            "allow_unknown": False,
+            "excluded_location_signals": [
+                "Global",
+                "International",
+                "Worldwide",
+                "EMEA",
+                "Europe",
+                "European Union",
+                "APAC",
+                "Asia",
+                "India",
+                "Portugal",
+                "Canada",
+                "Mexico",
+                "United Kingdom",
+                "UK",
+                "Australia",
+            ],
+        },
+
         "categories": {
             "SDE": {
                 "enabled": True,
@@ -274,6 +310,9 @@ def pipeline(
         ),
         fit_scorer=FitScorer(
             candidate_config
+        ),
+        fit_gate=FitGate(
+            roles_config
         ),
         resume_router=ResumeRouter(
             candidate_config
@@ -1032,3 +1071,202 @@ def test_pipeline_result_returns_same_job_object(
     )
 
     assert result.job is job
+
+def test_high_fit_auto_job_passes_fit_gate(
+    pipeline,
+):
+    job = make_job(
+        title="Software Engineer I",
+        description=(
+            "Build Python and Java backend services using "
+            "REST API, Microservices, Distributed Systems, "
+            "AWS, Docker, PostgreSQL, and Redis."
+        ),
+        url="https://example.com/jobs/high-fit",
+    )
+
+    result = pipeline.process(job)
+
+    assert job.fit_score is not None
+    assert job.fit_score >= 70
+
+    assert (
+        result.outcome
+        == PipelineOutcome.AUTO_READY
+    )
+
+    assert (
+        job.application_method
+        == ApplicationMethod.AUTO
+    )
+
+    assert (
+        job.status
+        == ApplicationStatus.NEEDS_APPLICATION
+    )
+
+    assert job.resume_used is not None
+    assert result.should_continue is True
+
+
+def test_review_fit_auto_job_requires_human_review(
+    pipeline,
+    database,
+):
+    job = make_job(
+        title="Software Engineer I",
+        description=(
+            "Build Python backend services using "
+            "Spring Boot and REST API."
+        ),
+        url="https://example.com/jobs/review-fit",
+    )
+
+    result = pipeline.process(job)
+
+    assert job.fit_score is not None
+    assert 50 <= job.fit_score < 70
+
+    assert (
+        result.outcome
+        == PipelineOutcome.MANUAL_REVIEW
+    )
+
+    assert (
+        job.application_method
+        == ApplicationMethod.REVIEW
+    )
+
+    assert (
+        job.status
+        == ApplicationStatus.NEEDS_REVIEW
+    )
+
+    assert job.resume_used is None
+    assert result.should_continue is False
+
+    stored = database.get_job_by_id(
+        result.job_id
+    )
+
+    assert stored is not None
+
+    assert (
+        stored.application_method
+        == ApplicationMethod.REVIEW
+    )
+
+    assert (
+        stored.status
+        == ApplicationStatus.NEEDS_REVIEW
+    )
+
+    assert stored.resume_used is None
+
+
+def test_low_fit_auto_job_is_filtered_after_scoring(
+    pipeline,
+    database,
+):
+    job = make_job(
+        title="Software Engineer I",
+        description=(
+            "Maintain internal technical documentation "
+            "and coordinate engineering activities."
+        ),
+        url="https://example.com/jobs/low-fit",
+    )
+
+    result = pipeline.process(job)
+
+    assert job.fit_score is not None
+    assert job.fit_score < 50
+
+    assert (
+        result.outcome
+        == PipelineOutcome.FILTERED_OUT
+    )
+
+    assert (
+        job.application_method
+        == ApplicationMethod.UNKNOWN
+    )
+
+    assert (
+        job.status
+        == ApplicationStatus.FILTERED_OUT
+    )
+
+    assert job.resume_used is None
+    assert result.should_continue is False
+
+    stored = database.get_job_by_id(
+        result.job_id
+    )
+
+    assert stored is not None
+    assert stored.fit_score == job.fit_score
+
+    assert (
+        stored.status
+        == ApplicationStatus.FILTERED_OUT
+    )
+
+    assert stored.resume_used is None
+
+def test_non_us_job_is_filtered_before_fit_scoring(
+        pipeline,
+        database,
+    ):
+        job = make_job(
+            title="Cloud Platform Engineer",
+            description=(
+                "Build Python cloud platform services using "
+                "AWS, Kubernetes, Docker, Terraform, and Linux."
+            ),
+            location="India",
+            url="https://example.com/jobs/india-cloud-platform",
+        )
+
+        result = pipeline.process(job)
+
+        assert (
+                result.outcome
+                == PipelineOutcome.FILTERED_OUT
+        )
+
+        assert result.should_continue is False
+
+        assert (
+                job.status
+                == ApplicationStatus.FILTERED_OUT
+        )
+
+        assert job.fit_score is None
+        assert job.resume_used is None
+
+        assert (
+                job.company_rule
+                == CompanyRule.AUTO
+        )
+
+        assert (
+                job.application_method
+                == ApplicationMethod.AUTO
+        )
+
+        assert result.job_id is not None
+
+        stored = database.get_job_by_id(
+            result.job_id
+        )
+
+        assert stored is not None
+
+        assert (
+                stored.status
+                == ApplicationStatus.FILTERED_OUT
+        )
+
+        assert stored.fit_score is None
+        assert stored.resume_used is None

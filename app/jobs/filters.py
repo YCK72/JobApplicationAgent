@@ -64,6 +64,16 @@ class JobFilter:
         "director",
     )
 
+    US_STATE_CODES = frozenset({
+        "al", "ak", "az", "ar", "ca", "co", "ct", "de",
+        "fl", "ga", "hi", "id", "il", "in", "ia", "ks",
+        "ky", "la", "me", "md", "ma", "mi", "mn", "ms",
+        "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny",
+        "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc",
+        "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv",
+        "wi", "wy", "dc",
+    })
+
     # Required experience above this threshold is treated as
     # outside the early-career target.
     MAX_REQUIRED_YEARS = 2
@@ -82,6 +92,54 @@ class JobFilter:
             )
 
         self.seniority_config = seniority_config
+
+        location_config = config.get("location")
+
+        if not isinstance(location_config, dict):
+            raise ValueError(
+                "roles.yaml must contain a 'location' dictionary."
+            )
+
+        self.location_config = location_config
+
+        self.country_aliases = tuple(
+            self._normalize_text(value)
+            for value in location_config.get(
+                "country_aliases",
+                [],
+            )
+            if str(value).strip()
+        )
+
+        self.excluded_location_signals = tuple(
+            self._normalize_text(value)
+            for value in location_config.get(
+                "excluded_location_signals",
+                [],
+            )
+            if str(value).strip()
+        )
+
+        self.allow_us_states = bool(
+            location_config.get(
+                "allow_us_states",
+                True,
+            )
+        )
+
+        self.allow_remote_us = bool(
+            location_config.get(
+                "allow_remote_us",
+                True,
+            )
+        )
+
+        self.allow_unknown_location = bool(
+            location_config.get(
+                "allow_unknown",
+                False,
+            )
+        )
 
         self.preferred_signals = tuple(
             self._normalize_text(value)
@@ -531,6 +589,25 @@ class JobFilter:
                 seniority=seniority_result.seniority,
             )
 
+        # Location eligibility.
+        #
+        # Location filtering belongs in the deterministic eligibility
+        # layer and must run before fit scoring. A technically strong
+        # non-US job must never become AUTO_READY under the configured
+        # US-only policy.
+        location_allowed, location_reason = (
+            self._is_location_allowed(
+                job.location
+            )
+        )
+
+        if not location_allowed:
+            return FilterResult(
+                keep=False,
+                reason=location_reason,
+                seniority=seniority_result.seniority,
+            )
+
         # Explicit senior role.
         if (
             seniority_result.seniority
@@ -566,6 +643,97 @@ class JobFilter:
                 "and seniority rules."
             ),
             seniority=seniority_result.seniority,
+        )
+
+    def _is_location_allowed(
+        self,
+        location: Optional[str],
+    ) -> tuple[bool, str]:
+        """
+        Determine whether a job location satisfies the configured
+        United States location policy.
+        """
+
+        normalized = self._normalize_text(location)
+
+        if not normalized:
+            if self.allow_unknown_location:
+                return (
+                    True,
+                    "Unknown location is allowed by configuration.",
+                )
+
+            return (
+                False,
+                "Job location is missing or unknown.",
+            )
+
+        # Explicit excluded/non-US signals take priority.
+        for signal in self.excluded_location_signals:
+            if self._contains_phrase(
+                normalized,
+                signal,
+            ):
+                return (
+                    False,
+                    (
+                        "Job location contains excluded "
+                        f"location signal: {signal}."
+                    ),
+                )
+
+        # Explicit United States aliases.
+        for alias in self.country_aliases:
+            if self._contains_phrase(
+                normalized,
+                alias,
+            ):
+                return (
+                    True,
+                    (
+                        "Job location matches allowed "
+                        f"country signal: {alias}."
+                    ),
+                )
+
+        # Remote jobs must explicitly indicate that they are US-based.
+        if "remote" in normalized:
+            if self.allow_remote_us:
+                return (
+                    False,
+                    (
+                        "Remote location does not explicitly "
+                        "indicate United States eligibility."
+                    ),
+                )
+
+            return (
+                False,
+                "Remote jobs are not allowed by configuration.",
+            )
+
+        # Accept standard US state abbreviations such as
+        # Seattle, WA or Austin, TX.
+        if self.allow_us_states:
+            tokens = set(
+                re.findall(
+                    r"\b[a-z]{2}\b",
+                    normalized,
+                )
+            )
+
+            if tokens & self.US_STATE_CODES:
+                return (
+                    True,
+                    "Job location contains a US state code.",
+                )
+
+        return (
+            False,
+            (
+                "Job location could not be verified as "
+                "United States."
+            ),
         )
 
     def filter_job(

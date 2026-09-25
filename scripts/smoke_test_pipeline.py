@@ -8,6 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.applications.resume_router import ResumeRouter
+from app.scoring.fit_gate import FitGate
 from app.jobs.classifier import RoleClassifier
 from app.jobs.company_router import CompanyRouter
 from app.jobs.filters import JobFilter
@@ -39,6 +40,7 @@ def build_pipeline(database: JobDatabase) -> JobPipeline:
         classifier=RoleClassifier(role_config),
         job_filter=JobFilter(role_config),
         fit_scorer=FitScorer(candidate_config),
+        fit_gate=FitGate(role_config),
         resume_router=ResumeRouter(candidate_config),
         database=database,
     )

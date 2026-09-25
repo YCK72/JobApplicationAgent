@@ -1,5 +1,9 @@
-location:
+fit_scoring:
+  auto_ready_minimum: 70
+  manual_review_minimum: 50
 
+
+location:
   allowed_country: "United States"
 
   country_aliases:
@@ -30,6 +34,7 @@ location:
     - "United Kingdom"
     - "UK"
     - "Australia"
+
 
 categories:
 

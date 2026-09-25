@@ -12,6 +12,35 @@ from app.jobs.models import (
 @pytest.fixture
 def role_config():
     return {
+        "location": {
+            "allowed_country": "United States",
+            "country_aliases": [
+                "United States",
+                "USA",
+                "U.S.",
+                "U.S.A.",
+            ],
+            "allow_us_states": True,
+            "allow_remote_us": True,
+            "allow_unknown": False,
+            "excluded_location_signals": [
+                "Global",
+                "International",
+                "Worldwide",
+                "EMEA",
+                "Europe",
+                "European Union",
+                "APAC",
+                "Asia",
+                "India",
+                "Portugal",
+                "Canada",
+                "Mexico",
+                "United Kingdom",
+                "UK",
+                "Australia",
+            ],
+        },
         "seniority": {
             "preferred": [
                 "entry level",
@@ -34,7 +63,7 @@ def role_config():
             "experience": {
                 "do_not_reject_preferred_experience_automatically": True,
             },
-        }
+        },
     }
 
 
@@ -49,11 +78,12 @@ def make_job(
     title: str = "Software Engineer",
     description: str | None = None,
     category: JobCategory = JobCategory.SDE,
+    location: str | None = "Seattle, WA",
 ) -> Job:
     return Job(
         company="Example Company",
         title=title,
-        location="Seattle, WA",
+        location=location,
         url="https://example.com/jobs/123",
         source="Test",
         description=description,
@@ -502,6 +532,135 @@ def test_existing_notes_are_preserved(
         in job.notes
     )
 
+    assert "Filter:" in job.notes
+
+
+
+
+# ============================================================
+# Location eligibility regression tests
+# ============================================================
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "Seattle, WA",
+        "Austin, TX",
+        "New York, NY",
+        "United States",
+        "Remote - United States",
+        "Remote, USA",
+    ],
+)
+def test_us_locations_are_allowed(
+    job_filter,
+    location,
+):
+    result = job_filter.evaluate(
+        make_job(
+            location=location,
+        )
+    )
+
+    assert result.keep is True
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "India",
+        "Toronto, Canada",
+        "London, United Kingdom",
+        "EMEA",
+        "APAC",
+        "Worldwide",
+        "Europe",
+        "Australia",
+    ],
+)
+def test_non_us_locations_are_filtered(
+    job_filter,
+    location,
+):
+    result = job_filter.evaluate(
+        make_job(
+            location=location,
+        )
+    )
+
+    assert result.keep is False
+    assert "location" in result.reason.lower()
+
+
+def test_generic_remote_location_is_filtered(
+    job_filter,
+):
+    result = job_filter.evaluate(
+        make_job(
+            location="Remote",
+        )
+    )
+
+    assert result.keep is False
+    assert "remote" in result.reason.lower()
+
+
+def test_unknown_location_is_filtered(
+    job_filter,
+):
+    result = job_filter.evaluate(
+        make_job(
+            location=None,
+        )
+    )
+
+    assert result.keep is False
+    assert "location" in result.reason.lower()
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "United States / India",
+        "USA or Canada",
+        "Remote - United States / EMEA",
+    ],
+)
+def test_mixed_us_and_excluded_locations_are_filtered(
+    job_filter,
+    location,
+):
+    result = job_filter.evaluate(
+        make_job(
+            location=location,
+        )
+    )
+
+    assert result.keep is False
+    assert "excluded" in result.reason.lower()
+
+
+def test_india_job_is_filtered_before_downstream_scoring(
+    job_filter,
+):
+    job = make_job(
+        title="Cloud Platform Engineer",
+        location="India",
+    )
+
+    returned_job = job_filter.filter_job(
+        job
+    )
+
+    assert returned_job is job
+    assert (
+        job.status
+        == ApplicationStatus.FILTERED_OUT
+    )
+    assert job.fit_score is None
+    assert job.resume_used is None
+    assert job.notes is not None
     assert "Filter:" in job.notes
 
 

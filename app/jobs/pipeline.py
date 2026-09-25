@@ -18,6 +18,7 @@ from app.jobs.models import (
     CompanyRule,
     Job,
 )
+from app.scoring.fit_gate import FitGate, FitTier
 from app.scoring.fit_scorer import FitScorer
 from app.tracking.database import JobDatabase
 
@@ -58,7 +59,7 @@ class PipelineResult:
 
 class JobPipeline:
     """
-    Deterministic Milestone 2 job-processing pipeline.
+    Deterministic job-processing and routing pipeline.
 
     Processing order:
 
@@ -69,8 +70,9 @@ class JobPipeline:
         5. Blocked-company protection
         6. Fit scoring
         7. Manual-company protection
-        8. Resume routing for AUTO jobs
-        9. SQLite persistence
+        8. Fit-score gating for AUTO companies
+        9. Resume routing for HIGH-fit AUTO jobs
+        10. SQLite persistence
 
     This pipeline does NOT open a browser, fill application forms,
     or submit applications.
@@ -83,6 +85,7 @@ class JobPipeline:
         classifier: RoleClassifier,
         job_filter: JobFilter,
         fit_scorer: FitScorer,
+        fit_gate: FitGate,
         resume_router: ResumeRouter,
         database: JobDatabase,
     ) -> None:
@@ -90,6 +93,7 @@ class JobPipeline:
         self.classifier = classifier
         self.job_filter = job_filter
         self.fit_scorer = fit_scorer
+        self.fit_gate = fit_gate
         self.resume_router = resume_router
         self.database = database
 
@@ -140,7 +144,7 @@ class JobPipeline:
     ) -> PipelineResult:
         """
         Process one discovered job through the complete
-        Milestone 2 intelligence and routing pipeline.
+        deterministic intelligence and routing pipeline.
         """
 
         # -----------------------------------------------------
@@ -196,8 +200,8 @@ class JobPipeline:
                 job=job,
                 outcome=PipelineOutcome.FILTERED_OUT,
                 reason=(
-                    "Job was filtered out by role or "
-                    "seniority eligibility rules."
+                    "Job was filtered out by role, seniority, "
+                    "or location eligibility rules."
                 ),
                 job_id=job_id,
             )
@@ -232,6 +236,11 @@ class JobPipeline:
         # -----------------------------------------------------
 
         self.fit_scorer.score_job(job)
+
+        if job.fit_score is None:
+            raise RuntimeError(
+                "Fit scorer completed without assigning a fit score."
+            )
 
         # -----------------------------------------------------
         # 7. Manual / priority company protection
@@ -277,26 +286,88 @@ class JobPipeline:
             )
 
         # -----------------------------------------------------
-        # 8. AUTO resume routing
+        # 8. Fit-score gating for AUTO companies
         # -----------------------------------------------------
 
         if job.company_rule != CompanyRule.AUTO:
             raise RuntimeError(
-                "Unexpected company rule reached AUTO routing: "
+                "Unexpected company rule reached fit gating: "
                 f"{job.company_rule.value}"
             )
 
+        fit_tier = self.fit_gate.evaluate(job.fit_score)
+
+        if fit_tier == FitTier.LOW:
+            job.resume_used = None
+            job.application_method = ApplicationMethod.UNKNOWN
+            job.status = ApplicationStatus.FILTERED_OUT
+
+            self._append_note(
+                job,
+                (
+                    "Pipeline: fit score below manual-review "
+                    "threshold; automatic workflow stopped."
+                ),
+            )
+
+            job_id = self._persist(job)
+
+            return PipelineResult(
+                job=job,
+                outcome=PipelineOutcome.FILTERED_OUT,
+                reason=(
+                    f"Fit score {job.fit_score:.2f} is below the "
+                    "manual-review threshold."
+                ),
+                job_id=job_id,
+            )
+
+        if fit_tier == FitTier.REVIEW:
+            job.resume_used = None
+            job.application_method = ApplicationMethod.REVIEW
+            job.status = ApplicationStatus.NEEDS_REVIEW
+
+            self._append_note(
+                job,
+                (
+                    "Pipeline: fit score requires human review "
+                    "before application routing."
+                ),
+            )
+
+            job_id = self._persist(job)
+
+            return PipelineResult(
+                job=job,
+                outcome=PipelineOutcome.MANUAL_REVIEW,
+                reason=(
+                    f"Fit score {job.fit_score:.2f} requires "
+                    "human review before application."
+                ),
+                job_id=job_id,
+            )
+
+        if fit_tier != FitTier.HIGH:
+            raise RuntimeError(
+                f"Unexpected fit tier: {fit_tier.value}"
+            )
+
+        # -----------------------------------------------------
+        # 9. HIGH-fit AUTO resume routing
+        # -----------------------------------------------------
+
         if job.application_method != ApplicationMethod.AUTO:
             raise RuntimeError(
-                "AUTO company does not have AUTO application method."
+                "HIGH-fit AUTO company does not have AUTO "
+                "application method."
             )
 
         self.resume_router.route_job(job)
 
         if not job.resume_used:
             raise RuntimeError(
-                "AUTO job reached application routing without "
-                "an assigned resume."
+                "HIGH-fit AUTO job reached application routing "
+                "without an assigned resume."
             )
 
         # Browser automation does not exist in this milestone yet.
@@ -306,11 +377,14 @@ class JobPipeline:
 
         self._append_note(
             job,
-            "Pipeline: qualified AUTO job ready for application workflow.",
+            (
+                "Pipeline: HIGH-fit qualified AUTO job ready "
+                "for application workflow."
+            ),
         )
 
         # -----------------------------------------------------
-        # 9. Persist final state
+        # 10. Persist final state
         # -----------------------------------------------------
 
         job_id = self._persist(job)
@@ -319,8 +393,8 @@ class JobPipeline:
             job=job,
             outcome=PipelineOutcome.AUTO_READY,
             reason=(
-                "Qualified AUTO job saved and ready for the "
-                "future application workflow."
+                "HIGH-fit qualified AUTO job saved and ready "
+                "for the future application workflow."
             ),
             job_id=job_id,
         )

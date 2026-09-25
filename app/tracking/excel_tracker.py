@@ -101,11 +101,7 @@ class ExcelTracker:
             [
                 job
                 for job in jobs
-                if (
-                    job.company_rule == CompanyRule.MANUAL
-                    or job.application_method
-                    == ApplicationMethod.MANUAL
-                )
+                if self._belongs_in_manual_queue(job)
             ],
         )
 
@@ -139,6 +135,27 @@ class ExcelTracker:
 
         return self.export_path
 
+    @staticmethod
+    def _belongs_in_manual_queue(job: Job) -> bool:
+        """
+        Return True when a job requires human attention.
+
+        MANUAL represents company-policy routing, such as priority
+        companies that must be tailored and applied to manually.
+
+        REVIEW represents fit-gate routing where the job's match
+        requires a human decision before continuing.
+        """
+
+        return (
+            job.company_rule == CompanyRule.MANUAL
+            or job.application_method
+            in {
+                ApplicationMethod.MANUAL,
+                ApplicationMethod.REVIEW,
+            }
+        )
+
     # ---------------------------------------------------------
     # Dashboard
     # ---------------------------------------------------------
@@ -166,11 +183,7 @@ class ExcelTracker:
         )
 
         manual_queue = sum(
-            (
-                job.company_rule == CompanyRule.MANUAL
-                or job.application_method
-                == ApplicationMethod.MANUAL
-            )
+            self._belongs_in_manual_queue(job)
             for job in jobs
         )
 

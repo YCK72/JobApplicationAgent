@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 from app.applications.resume_router import ResumeRouter
+from app.scoring.fit_gate import FitGate
 from app.discovery.greenhouse import GreenhouseJobSource
 from app.discovery.runner import DiscoveryRunner
 from app.jobs.classifier import RoleClassifier
@@ -99,6 +100,9 @@ def build_pipeline(
         ),
         fit_scorer=FitScorer(
             candidate_config
+        ),
+        fit_gate=FitGate(
+            role_config
         ),
         resume_router=ResumeRouter(
             candidate_config
