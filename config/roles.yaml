@@ -1,0 +1,139 @@
+categories:
+
+  SDE:
+    enabled: true
+
+    titles:
+      - "Software Engineer"
+      - "Software Engineer I"
+      - "Software Developer"
+      - "Associate Software Engineer"
+      - "Junior Software Engineer"
+      - "Backend Engineer"
+      - "Full Stack Engineer"
+      - "Platform Engineer"
+      - "Infrastructure Software Engineer"
+
+    keywords:
+      - "software engineering"
+      - "backend"
+      - "full stack"
+      - "distributed systems"
+      - "microservices"
+      - "REST API"
+      - "Java"
+      - "Python"
+      - "JavaScript"
+      - "TypeScript"
+
+    resume: "sde"
+
+
+  AI_ML:
+    enabled: true
+
+    titles:
+      - "Machine Learning Engineer"
+      - "ML Engineer"
+      - "AI Engineer"
+      - "Applied AI Engineer"
+      - "NLP Engineer"
+      - "Generative AI Engineer"
+      - "ML Platform Engineer"
+      - "AI Software Engineer"
+
+    keywords:
+      - "machine learning"
+      - "deep learning"
+      - "PyTorch"
+      - "TensorFlow"
+      - "scikit-learn"
+      - "NLP"
+      - "LLM"
+      - "RAG"
+      - "MLOps"
+      - "model serving"
+
+    resume: "ai_ml"
+
+
+  DATA_SCIENCE:
+    enabled: true
+
+    titles:
+      - "Data Scientist"
+      - "Data Scientist I"
+      - "Junior Data Scientist"
+      - "Associate Data Scientist"
+      - "Data Analyst"
+      - "Applied Scientist"
+
+    keywords:
+      - "data science"
+      - "statistics"
+      - "Python"
+      - "SQL"
+      - "Pandas"
+      - "NumPy"
+      - "machine learning"
+      - "regression"
+      - "feature engineering"
+      - "experimentation"
+      - "ETL"
+
+    resume: "data_science"
+
+
+  IT:
+    enabled: true
+
+    titles:
+      - "IT Engineer"
+      - "IT Analyst"
+      - "Systems Engineer"
+      - "Cloud Engineer"
+      - "Cloud Support Engineer"
+      - "DevOps Engineer"
+      - "Infrastructure Engineer"
+      - "Systems Administrator"
+      - "Technical Support Engineer"
+      - "Site Reliability Engineer"
+
+    keywords:
+      - "AWS"
+      - "Azure"
+      - "Linux"
+      - "Bash"
+      - "Docker"
+      - "Kubernetes"
+      - "Terraform"
+      - "CI/CD"
+      - "GitHub Actions"
+      - "Prometheus"
+      - "Grafana"
+
+    resume: "it"
+
+
+seniority:
+
+  preferred:
+    - "entry level"
+    - "new grad"
+    - "new graduate"
+    - "university graduate"
+    - "early career"
+    - "junior"
+    - "associate"
+    - "level i"
+
+  usually_exclude:
+    - "senior"
+    - "staff"
+    - "principal"
+    - "lead"
+    - "manager"
+    - "director"
+
+  experience:
+    do_not_reject_preferred_experience_automatically: true

@@ -1,0 +1,166 @@
+from pathlib import Path
+
+from openpyxl import load_workbook
+
+from app.jobs.models import (
+    ApplicationMethod,
+    ApplicationStatus,
+    CompanyRule,
+    Job,
+)
+from app.tracking.database import JobDatabase
+from app.tracking.excel_tracker import ExcelTracker
+
+
+def test_excel_tracker_creation(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "test_jobs.db"
+    )
+
+    export_path = (
+        tmp_path / "Job_Application_Tracker.xlsx"
+    )
+
+    tracker = ExcelTracker(
+        database,
+        export_path,
+    )
+
+    result = tracker.generate()
+
+    assert result.exists()
+
+
+def test_required_sheets(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "test_jobs.db"
+    )
+
+    export_path = (
+        tmp_path / "Job_Application_Tracker.xlsx"
+    )
+
+    ExcelTracker(
+        database,
+        export_path,
+    ).generate()
+
+    workbook = load_workbook(export_path)
+
+    expected = {
+        "Dashboard",
+        "All Jobs",
+        "Applied",
+        "Manual Queue",
+        "Interviews",
+        "Rejected",
+    }
+
+    assert expected.issubset(
+        set(workbook.sheetnames)
+    )
+
+
+def test_job_appears_in_all_jobs(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "test_jobs.db"
+    )
+
+    job = Job(
+        company="Example Company",
+        title="Software Engineer",
+        url="https://example.com/jobs/1",
+        source="Test",
+    )
+
+    database.add_job(job)
+
+    export_path = (
+        tmp_path / "Job_Application_Tracker.xlsx"
+    )
+
+    ExcelTracker(
+        database,
+        export_path,
+    ).generate()
+
+    workbook = load_workbook(export_path)
+
+    sheet = workbook["All Jobs"]
+
+    assert sheet["A2"].value == "Example Company"
+    assert sheet["B2"].value == "Software Engineer"
+
+
+def test_manual_job_appears_in_manual_queue(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "test_jobs.db"
+    )
+
+    job = Job(
+        company="Microsoft",
+        title="Software Engineer",
+        url="https://example.com/jobs/microsoft",
+        source="Test",
+        priority_company=True,
+        company_rule=CompanyRule.MANUAL,
+        application_method=ApplicationMethod.MANUAL,
+    )
+
+    database.add_job(job)
+
+    export_path = (
+        tmp_path / "Job_Application_Tracker.xlsx"
+    )
+
+    ExcelTracker(
+        database,
+        export_path,
+    ).generate()
+
+    workbook = load_workbook(export_path)
+
+    sheet = workbook["Manual Queue"]
+
+    assert sheet["A2"].value == "Microsoft"
+
+
+def test_applied_job_appears_in_applied_sheet(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "test_jobs.db"
+    )
+
+    job = Job(
+        company="Example Company",
+        title="ML Engineer",
+        url="https://example.com/jobs/ml",
+        source="Test",
+        status=ApplicationStatus.APPLIED,
+    )
+
+    database.add_job(job)
+
+    export_path = (
+        tmp_path / "Job_Application_Tracker.xlsx"
+    )
+
+    ExcelTracker(
+        database,
+        export_path,
+    ).generate()
+
+    workbook = load_workbook(export_path)
+
+    sheet = workbook["Applied"]
+
+    assert sheet["A2"].value == "Example Company"

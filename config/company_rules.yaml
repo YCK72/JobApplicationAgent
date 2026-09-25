@@ -1,0 +1,111 @@
+default_rule: AUTO
+
+manual_companies:
+
+  Microsoft:
+    aliases:
+      - "microsoft"
+      - "microsoft corporation"
+
+  Amazon:
+    aliases:
+      - "amazon"
+      - "amazon.com"
+      - "amazon web services"
+      - "aws"
+      - "amazon development center"
+
+  Apple:
+    aliases:
+      - "apple"
+      - "apple inc"
+
+  Google:
+    aliases:
+      - "google"
+      - "google llc"
+      - "google deepmind"
+
+  Meta:
+    aliases:
+      - "meta"
+      - "meta platforms"
+      - "facebook"
+
+  NVIDIA:
+    aliases:
+      - "nvidia"
+      - "nvidia corporation"
+
+  Tesla:
+    aliases:
+      - "tesla"
+      - "tesla inc"
+
+  OpenAI:
+    aliases:
+      - "openai"
+
+  Anthropic:
+    aliases:
+      - "anthropic"
+
+  Netflix:
+    aliases:
+      - "netflix"
+
+  Salesforce:
+    aliases:
+      - "salesforce"
+
+  Adobe:
+    aliases:
+      - "adobe"
+
+  Oracle:
+    aliases:
+      - "oracle"
+
+  Cisco:
+    aliases:
+      - "cisco"
+
+  Intel:
+    aliases:
+      - "intel"
+
+  AMD:
+    aliases:
+      - "amd"
+      - "advanced micro devices"
+
+  Qualcomm:
+    aliases:
+      - "qualcomm"
+
+  Uber:
+    aliases:
+      - "uber"
+
+  Airbnb:
+    aliases:
+      - "airbnb"
+
+  LinkedIn:
+    aliases:
+      - "linkedin"
+
+  Stripe:
+    aliases:
+      - "stripe"
+
+  Databricks:
+    aliases:
+      - "databricks"
+
+  Snowflake:
+    aliases:
+      - "snowflake"
+
+
+blocked_companies: {}
