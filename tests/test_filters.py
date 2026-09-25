@@ -674,3 +674,38 @@ def test_invalid_configuration_rejected():
         ValueError
     ):
         JobFilter({})
+
+def test_location_does_not_treat_word_in_as_indiana(
+    role_config,
+):
+    job_filter = JobFilter(role_config)
+
+    job = make_job(
+        location="Based in office",
+    )
+
+    result = job_filter.evaluate(job)
+
+    assert result.keep is False
+    assert (
+        "could not be verified as United States"
+        in result.reason
+    )
+
+
+def test_location_does_not_treat_word_or_as_oregon(
+    role_config,
+):
+    job_filter = JobFilter(role_config)
+
+    job = make_job(
+        location="Hybrid or onsite",
+    )
+
+    result = job_filter.evaluate(job)
+
+    assert result.keep is False
+    assert (
+        "could not be verified as United States"
+        in result.reason
+    )

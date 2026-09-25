@@ -712,17 +712,27 @@ class JobFilter:
                 "Remote jobs are not allowed by configuration.",
             )
 
-        # Accept standard US state abbreviations such as
-        # Seattle, WA or Austin, TX.
-        if self.allow_us_states:
-            tokens = set(
-                re.findall(
-                    r"\b[a-z]{2}\b",
-                    normalized,
-                )
+        # Accept standard US state abbreviations such as:
+        #     Seattle, WA
+        #     Austin, TX
+        #     Portland, OR
+        #     Indianapolis, IN
+        #
+        # State codes are detected from the original location string
+        # rather than normalized text so that uppercase abbreviations
+        # remain distinguishable from ordinary words such as "in"
+        # and "or".
+        if self.allow_us_states and location:
+            state_match = re.search(
+                r"(?:,\s*|\s+)([A-Z]{2})\b",
+                location.strip(),
             )
 
-            if tokens & self.US_STATE_CODES:
+            if (
+                    state_match
+                    and state_match.group(1).lower()
+                    in self.US_STATE_CODES
+            ):
                 return (
                     True,
                     "Job location contains a US state code.",
