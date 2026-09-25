@@ -98,3 +98,6 @@ desktop.ini
 
 # Private candidate configuration
 config/candidate.yaml
+
+# Private candidate resumes and CVs
+data/resumes/*.pdf
