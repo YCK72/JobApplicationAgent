@@ -95,3 +95,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Private candidate configuration
+config/candidate.yaml
