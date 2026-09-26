@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from app.applications.adapters.base import (
     ApplicationFormAdapter,
@@ -10,49 +10,58 @@ from app.applications.adapters.detector import (
 )
 
 
+AdapterFactory = Callable[
+    [str],
+    ApplicationFormAdapter,
+]
+
+
 class AdapterNotAvailableError(LookupError):
     """
-    Raised when no explicitly registered adapter exists for an ATS.
+    Raised when no explicitly registered adapter factory exists
+    for an ATS.
     """
 
 
 class ApplicationAdapterRegistry:
     """
-    Deterministic registry of ATS providers to form adapters.
+    Deterministic registry of ATS providers to adapter factories.
 
     Registration must be explicit. Unknown or unsupported providers
     never fall back to another adapter.
+
+    Each factory receives the specific job URL and must return an
+    ApplicationFormAdapter configured for that application.
     """
 
     def __init__(
         self,
-        adapters: Mapping[
+        factories: Mapping[
             ATSProvider,
-            ApplicationFormAdapter,
+            AdapterFactory,
         ]
         | None = None,
     ) -> None:
-        self._adapters: dict[
+        self._factories: dict[
             ATSProvider,
-            ApplicationFormAdapter,
+            AdapterFactory,
         ] = {}
 
-        if adapters:
-            for provider, adapter in adapters.items():
+        if factories:
+            for provider, factory in factories.items():
                 self.register(
                     provider=provider,
-                    adapter=adapter,
+                    factory=factory,
                 )
 
     def register(
         self,
         provider: ATSProvider,
-        adapter: ApplicationFormAdapter,
+        factory: AdapterFactory,
     ) -> None:
         """
-        Explicitly register one adapter for one known provider.
+        Explicitly register one adapter factory for one known provider.
         """
-
         if not isinstance(provider, ATSProvider):
             raise TypeError(
                 "provider must be an ATSProvider"
@@ -60,29 +69,27 @@ class ApplicationAdapterRegistry:
 
         if provider == ATSProvider.UNKNOWN:
             raise ValueError(
-                "Cannot register an adapter for UNKNOWN provider."
+                "Cannot register an adapter factory for "
+                "UNKNOWN provider."
             )
 
-        if not isinstance(
-            adapter,
-            ApplicationFormAdapter,
-        ):
+        if not callable(factory):
             raise TypeError(
-                "adapter must implement ApplicationFormAdapter"
+                "factory must be callable"
             )
 
-        self._adapters[provider] = adapter
+        self._factories[provider] = factory
 
-    def get(
+    def create(
         self,
         provider: ATSProvider,
+        job_url: str,
     ) -> ApplicationFormAdapter:
         """
-        Return the explicitly registered adapter.
+        Create the explicitly registered adapter for one job URL.
 
         Unknown or unregistered providers fail closed.
         """
-
         if not isinstance(provider, ATSProvider):
             raise AdapterNotAvailableError(
                 "Invalid ATS provider."
@@ -93,11 +100,22 @@ class ApplicationAdapterRegistry:
                 "No adapter is available for UNKNOWN provider."
             )
 
-        adapter = self._adapters.get(provider)
+        factory = self._factories.get(provider)
 
-        if adapter is None:
+        if factory is None:
             raise AdapterNotAvailableError(
                 f"No adapter registered for {provider.value}."
+            )
+
+        adapter = factory(job_url)
+
+        if not isinstance(
+            adapter,
+            ApplicationFormAdapter,
+        ):
+            raise TypeError(
+                "Adapter factory must return an "
+                "ApplicationFormAdapter."
             )
 
         return adapter
@@ -108,11 +126,10 @@ class ApplicationAdapterRegistry:
     ) -> bool:
         """
         Return True only when a known provider has an explicitly
-        registered adapter.
+        registered adapter factory.
         """
-
         return (
             isinstance(provider, ATSProvider)
             and provider != ATSProvider.UNKNOWN
-            and provider in self._adapters
+            and provider in self._factories
         )

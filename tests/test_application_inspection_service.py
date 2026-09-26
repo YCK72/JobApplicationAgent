@@ -140,7 +140,8 @@ def build_service(
 ):
     registry = ApplicationAdapterRegistry(
         {
-            ATSProvider.GREENHOUSE: adapter,
+            ATSProvider.GREENHOUSE:
+                lambda job_url: adapter,
         }
     )
 

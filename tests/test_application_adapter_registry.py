@@ -18,6 +18,9 @@ from app.applications.form_models import (
 class FakeGreenhouseAdapter(
     ApplicationFormAdapter
 ):
+    def __init__(self, job_url: str) -> None:
+        self.job_url = job_url
+
     @property
     def provider_name(self) -> str:
         return "Greenhouse"
@@ -25,13 +28,16 @@ class FakeGreenhouseAdapter(
     def inspect(self) -> ApplicationForm:
         return ApplicationForm(
             provider=self.provider_name,
-            job_url="https://boards.greenhouse.io/example/jobs/123",
+            job_url=self.job_url,
         )
 
 
 class FakeLeverAdapter(
     ApplicationFormAdapter
 ):
+    def __init__(self, job_url: str) -> None:
+        self.job_url = job_url
+
     @property
     def provider_name(self) -> str:
         return "Lever"
@@ -39,46 +45,104 @@ class FakeLeverAdapter(
     def inspect(self) -> ApplicationForm:
         return ApplicationForm(
             provider=self.provider_name,
-            job_url="https://jobs.lever.co/example/123",
+            job_url=self.job_url,
         )
 
 
-def test_registered_adapter_can_be_retrieved():
-    adapter = FakeGreenhouseAdapter()
+def greenhouse_factory(
+    job_url: str,
+) -> ApplicationFormAdapter:
+    return FakeGreenhouseAdapter(job_url)
 
+
+def lever_factory(
+    job_url: str,
+) -> ApplicationFormAdapter:
+    return FakeLeverAdapter(job_url)
+
+
+def test_registered_factory_creates_adapter():
     registry = ApplicationAdapterRegistry(
         {
-            ATSProvider.GREENHOUSE: adapter,
+            ATSProvider.GREENHOUSE:
+                greenhouse_factory,
         }
     )
 
-    result = registry.get(
-        ATSProvider.GREENHOUSE
+    url = (
+        "https://boards.greenhouse.io/"
+        "example/jobs/123"
     )
 
-    assert result is adapter
+    result = registry.create(
+        ATSProvider.GREENHOUSE,
+        url,
+    )
+
+    assert isinstance(
+        result,
+        FakeGreenhouseAdapter,
+    )
+    assert result.job_url == url
 
 
-def test_multiple_adapters_can_be_registered():
-    greenhouse = FakeGreenhouseAdapter()
-    lever = FakeLeverAdapter()
-
+def test_multiple_factories_can_be_registered():
     registry = ApplicationAdapterRegistry(
         {
-            ATSProvider.GREENHOUSE: greenhouse,
-            ATSProvider.LEVER: lever,
+            ATSProvider.GREENHOUSE:
+                greenhouse_factory,
+            ATSProvider.LEVER:
+                lever_factory,
         }
     )
 
-    assert (
-        registry.get(ATSProvider.GREENHOUSE)
-        is greenhouse
+    greenhouse = registry.create(
+        ATSProvider.GREENHOUSE,
+        "https://boards.greenhouse.io/example/jobs/123",
     )
 
-    assert (
-        registry.get(ATSProvider.LEVER)
-        is lever
+    lever = registry.create(
+        ATSProvider.LEVER,
+        "https://jobs.lever.co/example/123",
     )
+
+    assert isinstance(
+        greenhouse,
+        FakeGreenhouseAdapter,
+    )
+
+    assert isinstance(
+        lever,
+        FakeLeverAdapter,
+    )
+
+
+def test_job_url_is_passed_to_factory():
+    received_urls = []
+
+    def factory(
+        job_url: str,
+    ) -> ApplicationFormAdapter:
+        received_urls.append(job_url)
+        return FakeGreenhouseAdapter(job_url)
+
+    registry = ApplicationAdapterRegistry(
+        {
+            ATSProvider.GREENHOUSE: factory,
+        }
+    )
+
+    url = (
+        "https://boards.greenhouse.io/"
+        "example/jobs/456"
+    )
+
+    registry.create(
+        ATSProvider.GREENHOUSE,
+        url,
+    )
+
+    assert received_urls == [url]
 
 
 def test_unregistered_known_provider_fails_closed():
@@ -87,8 +151,9 @@ def test_unregistered_known_provider_fails_closed():
     with pytest.raises(
         AdapterNotAvailableError
     ):
-        registry.get(
-            ATSProvider.GREENHOUSE
+        registry.create(
+            ATSProvider.GREENHOUSE,
+            "https://boards.greenhouse.io/example/jobs/123",
         )
 
 
@@ -98,8 +163,9 @@ def test_unknown_provider_fails_closed():
     with pytest.raises(
         AdapterNotAvailableError
     ):
-        registry.get(
-            ATSProvider.UNKNOWN
+        registry.create(
+            ATSProvider.UNKNOWN,
+            "https://example.com/jobs/123",
         )
 
 
@@ -109,32 +175,33 @@ def test_invalid_provider_fails_closed():
     with pytest.raises(
         AdapterNotAvailableError
     ):
-        registry.get("GREENHOUSE")
+        registry.create(
+            "GREENHOUSE",
+            "https://boards.greenhouse.io/example/jobs/123",
+        )
 
 
 def test_unknown_provider_cannot_be_registered():
     registry = ApplicationAdapterRegistry()
-    adapter = FakeGreenhouseAdapter()
 
     with pytest.raises(ValueError):
         registry.register(
             ATSProvider.UNKNOWN,
-            adapter,
+            greenhouse_factory,
         )
 
 
 def test_invalid_provider_cannot_be_registered():
     registry = ApplicationAdapterRegistry()
-    adapter = FakeGreenhouseAdapter()
 
     with pytest.raises(TypeError):
         registry.register(
             "GREENHOUSE",
-            adapter,
+            greenhouse_factory,
         )
 
 
-def test_invalid_adapter_cannot_be_registered():
+def test_non_callable_factory_cannot_be_registered():
     registry = ApplicationAdapterRegistry()
 
     with pytest.raises(TypeError):
@@ -144,11 +211,29 @@ def test_invalid_adapter_cannot_be_registered():
         )
 
 
+def test_factory_must_return_adapter():
+    registry = ApplicationAdapterRegistry(
+        {
+            ATSProvider.GREENHOUSE:
+                lambda job_url: object(),
+        }
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="must return",
+    ):
+        registry.create(
+            ATSProvider.GREENHOUSE,
+            "https://boards.greenhouse.io/example/jobs/123",
+        )
+
+
 def test_has_adapter_true_for_registered_provider():
     registry = ApplicationAdapterRegistry(
         {
             ATSProvider.GREENHOUSE:
-                FakeGreenhouseAdapter(),
+                greenhouse_factory,
         }
     )
 
@@ -183,11 +268,10 @@ def test_has_adapter_false_for_unknown():
 
 
 def test_registration_is_provider_specific():
-    greenhouse = FakeGreenhouseAdapter()
-
     registry = ApplicationAdapterRegistry(
         {
-            ATSProvider.GREENHOUSE: greenhouse,
+            ATSProvider.GREENHOUSE:
+                greenhouse_factory,
         }
     )
 
@@ -208,6 +292,7 @@ def test_registration_is_provider_specific():
     with pytest.raises(
         AdapterNotAvailableError
     ):
-        registry.get(
-            ATSProvider.LEVER
+        registry.create(
+            ATSProvider.LEVER,
+            "https://jobs.lever.co/example/123",
         )

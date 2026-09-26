@@ -141,8 +141,10 @@ class ApplicationInspectionService:
             )
 
         try:
-            adapter = self.registry.get(provider)
-
+            adapter = self.registry.create(
+                provider=provider,
+                job_url=str(job.url),
+            )
         except AdapterNotAvailableError as exc:
             reason = str(exc)
 
