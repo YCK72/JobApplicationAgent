@@ -312,6 +312,45 @@ class JobDatabase:
 
             connection.commit()
 
+    def update_application_state(
+        self,
+        job_id: int,
+        status: ApplicationStatus,
+        notes: Optional[str] = None,
+    ) -> None:
+        """
+        Atomically persist application lifecycle state and notes.
+
+        This is used when a lifecycle transition has an explanatory
+        reason that must remain consistent with the persisted status.
+        """
+
+        now = datetime.now().isoformat()
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?,
+                    notes = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    status.value,
+                    notes,
+                    now,
+                    job_id,
+                ),
+            )
+
+            if cursor.rowcount == 0:
+                raise ValueError(
+                    f"Job ID {job_id} does not exist."
+                )
+
+            connection.commit()
+
     def update_fit_score(
         self,
         job_id: int,
