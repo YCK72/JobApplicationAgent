@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Safe Application Test Form</title>
+</head>
+<body>
+    <h1>Local Application Test Form</h1>
+
+    <form id="application-form">
+        <label for="first_name">First Name</label>
+        <input
+            id="first_name"
+            name="first_name"
+            type="text"
+        >
+
+        <label for="email">Email</label>
+        <input
+            id="email"
+            name="email"
+            type="email"
+        >
+
+        <label for="phone">Phone</label>
+        <input
+            id="phone"
+            name="phone"
+            type="tel"
+        >
+
+        <label for="short_answer">Short Answer</label>
+        <textarea
+            id="short_answer"
+            name="short_answer"
+        ></textarea>
+
+        <label for="country">Country</label>
+        <select
+            id="country"
+            name="country"
+        >
+            <option value="">Select a country</option>
+            <option value="US">United States</option>
+            <option value="CA">Canada</option>
+        </select>
+
+        <label for="resume">Resume</label>
+        <input
+            id="resume"
+            name="resume"
+            type="file"
+        >
+
+        <button
+            id="submit"
+            type="submit"
+        >
+            Submit Application
+        </button>
+    </form>
+
+    <script>
+        window.testSubmissionCount = 0;
+
+        document
+            .getElementById("application-form")
+            .addEventListener("submit", function (event) {
+                event.preventDefault();
+                window.testSubmissionCount += 1;
+            });
+    </script>
+</body>
+</html>
