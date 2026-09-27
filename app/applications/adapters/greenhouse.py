@@ -113,11 +113,25 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
 
         input_type = (
             control.get_attribute("type") or ""
-        ).lower()
+        ).strip().lower()
+
+        role = (
+            control.get_attribute("role") or ""
+        ).strip().lower()
+
+        autocomplete = (
+            control.get_attribute("autocomplete") or ""
+        ).strip().lower()
+
+        class_name = (
+            control.get_attribute("class") or ""
+        ).strip()
 
         if self._should_ignore_control(
             tag_name=tag_name,
             input_type=input_type,
+            role=role,
+            class_name=class_name,
         ):
             return None
 
@@ -129,12 +143,15 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
         label = self._field_label(
             control=control,
             field_id=field_id,
+            input_type=input_type,
             page=page,
         )
 
         field_type = self._field_type(
             tag_name=tag_name,
             input_type=input_type,
+            role=role,
+            autocomplete=autocomplete,
         )
 
         required = self._is_required(control)
@@ -163,17 +180,55 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
         *,
         tag_name: str,
         input_type: str,
+        role: str,
+        class_name: str,
     ) -> bool:
+        """
+        Return True for controls that are implementation details rather
+        than real application questions.
+
+        Greenhouse uses hidden/action inputs as well as internal helper
+        inputs for custom select widgets. The international telephone
+        input library also injects its own country-search control.
+
+        These controls must not become ApplicationForm fields.
+        """
         if tag_name != "input":
             return False
 
-        return input_type in {
+        ignored_input_types = {
             "hidden",
             "submit",
             "button",
             "reset",
             "image",
         }
+
+        if input_type in ignored_input_types:
+            return True
+
+        classes = set(class_name.split())
+
+        # Greenhouse custom select widgets inject a separate required
+        # helper input with a generated CSS prefix, for example:
+        #
+        # remix-css-1a0ro4n-requiredInput
+        #
+        # The generated prefix may change, so match the stable suffix
+        # rather than one exact class name.
+        if any(
+            class_token.endswith("-requiredInput")
+            for class_token in classes
+        ):
+            return True
+
+        # intl-tel-input injects an internal searchable country picker.
+        # It is part of the phone widget, not a separate application
+        # question.
+        if "iti__search-input" in classes:
+            return True
+
+        return False
 
     @staticmethod
     def _field_id(
@@ -195,8 +250,27 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
         *,
         control: Locator,
         field_id: str,
+        input_type: str,
         page: Page,
     ) -> str:
+        """
+        Resolve a human-readable field label without interacting with
+        the control.
+
+        Greenhouse file inputs may use generic action labels such as
+        "Attach" instead of describing the semantic application field.
+        For those file inputs, generic action labels are skipped so the
+        semantic name or field identifier can be used instead.
+
+        Resolution order:
+
+        1. Meaningful native <label for="..."> association.
+        2. Elements referenced by aria-labelledby.
+        3. aria-label.
+        4. placeholder.
+        5. name.
+        6. Normalized field identifier.
+        """
         control_id = control.get_attribute("id")
 
         if control_id:
@@ -209,13 +283,58 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
                     label.first.inner_text()
                 )
 
+                if (
+                    text
+                    and not cls._is_generic_file_label(
+                        text=text,
+                        input_type=input_type,
+                    )
+                ):
+                    return text
+
+        aria_labelledby = control.get_attribute(
+            "aria-labelledby"
+        )
+
+        if aria_labelledby and aria_labelledby.strip():
+            referenced_texts: list[str] = []
+
+            for referenced_id in aria_labelledby.split():
+                referenced_label = page.locator(
+                    f"#{cls._css_escape(referenced_id)}"
+                )
+
+                if referenced_label.count() == 0:
+                    continue
+
+                text = cls._clean_text(
+                    referenced_label.first.inner_text()
+                )
+
                 if text:
+                    referenced_texts.append(text)
+
+            if referenced_texts:
+                text = cls._clean_text(
+                    " ".join(referenced_texts)
+                )
+
+                if not cls._is_generic_file_label(
+                    text=text,
+                    input_type=input_type,
+                ):
                     return text
 
         aria_label = control.get_attribute("aria-label")
 
         if aria_label and aria_label.strip():
-            return cls._clean_text(aria_label)
+            text = cls._clean_text(aria_label)
+
+            if not cls._is_generic_file_label(
+                text=text,
+                input_type=input_type,
+            ):
+                return text
 
         placeholder = control.get_attribute("placeholder")
 
@@ -230,11 +349,49 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
         return cls._humanize_identifier(field_id)
 
     @staticmethod
+    def _is_generic_file_label(
+        *,
+        text: str,
+        input_type: str,
+    ) -> bool:
+        """
+        Return True when a file input label describes an upload action
+        rather than the semantic application field.
+        """
+        if input_type != "file":
+            return False
+
+        normalized = " ".join(
+            text.strip().lower().split()
+        )
+
+        generic_labels = {
+            "attach",
+            "upload",
+            "choose file",
+            "browse",
+        }
+
+        return normalized in generic_labels
+
+    @staticmethod
     def _field_type(
         *,
         tag_name: str,
         input_type: str,
+        role: str = "",
+        autocomplete: str = "",
     ) -> FormFieldType:
+        """
+        Normalize the browser control into an ATS-independent field type.
+
+        Greenhouse frequently implements dropdowns as text inputs with
+        role="combobox", so semantic accessibility metadata takes
+        precedence over the raw HTML input type.
+
+        Greenhouse also currently renders its email control as
+        type="text" while exposing autocomplete="email".
+        """
         if tag_name == "textarea":
             return FormFieldType.TEXTAREA
 
@@ -243,6 +400,12 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
 
         if tag_name != "input":
             return FormFieldType.UNKNOWN
+
+        if role == "combobox":
+            return FormFieldType.SELECT
+
+        if autocomplete == "email":
+            return FormFieldType.EMAIL
 
         mapping = {
             "": FormFieldType.TEXT,
@@ -281,6 +444,14 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
         control: Locator,
         field_type: FormFieldType,
     ) -> list[str]:
+        """
+        Read options from native HTML select controls.
+
+        Custom Greenhouse combobox options are intentionally not opened
+        or clicked here. Until their DOM structure is inspected and
+        tested independently, those controls normalize as SELECT with an
+        empty options list.
+        """
         if field_type != FormFieldType.SELECT:
             return []
 

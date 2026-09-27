@@ -52,6 +52,7 @@ def make_control(
 def make_page(
     controls: list[MagicMock],
     labels: dict[str, str] | None = None,
+    labelled_by: dict[str, str] | None = None,
 ) -> MagicMock:
     page = MagicMock()
 
@@ -67,6 +68,7 @@ def make_page(
         else make_label_locator(
             selector=selector,
             labels=labels or {},
+            labelled_by=labelled_by or {},
         )
     )
 
@@ -77,6 +79,7 @@ def make_label_locator(
     *,
     selector: str,
     labels: dict[str, str],
+    labelled_by: dict[str, str] | None = None,
 ) -> MagicMock:
     locator = MagicMock()
 
@@ -88,6 +91,16 @@ def make_label_locator(
         if selector == expected:
             matched_text = label_text
             break
+
+    if matched_text is None:
+        for label_id, label_text in (
+            labelled_by or {}
+        ).items():
+            expected = f"#{label_id}"
+
+            if selector == expected:
+                matched_text = label_text
+                break
 
     if matched_text is None:
         locator.count.return_value = 0
@@ -618,3 +631,232 @@ def test_inspect_closes_browser_when_form_inspection_fails(
         )
 
     session.close.assert_called_once_with()
+
+
+def test_greenhouse_internal_required_helper_is_ignored():
+    helper = make_control(
+        tag_name="input",
+        attributes={
+            "class": "remix-css-1a0ro4n-requiredInput",
+            "required": "",
+        },
+    )
+
+    page = make_page([helper])
+    browser_session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=browser_session,
+    )
+
+    form = adapter.inspect()
+
+    assert form.fields == []
+
+
+def test_phone_country_search_input_is_ignored():
+    search_input = make_control(
+        tag_name="input",
+        attributes={
+            "id": "iti-0__search-input",
+            "type": "search",
+            "role": "combobox",
+            "aria-label": "Search",
+            "class": "iti__search-input",
+        },
+    )
+
+    page = make_page([search_input])
+    browser_session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=browser_session,
+    )
+
+    form = adapter.inspect()
+
+    assert form.fields == []
+
+
+def test_email_autocomplete_is_normalized_as_email():
+    email_input = make_control(
+        tag_name="input",
+        attributes={
+            "id": "email",
+            "type": "text",
+            "autocomplete": "email",
+            "aria-label": "Email",
+            "aria-required": "true",
+        },
+    )
+
+    page = make_page([email_input])
+    browser_session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=browser_session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert form.fields[0].field_type == FormFieldType.EMAIL
+
+
+def test_greenhouse_combobox_is_normalized_as_select():
+    combobox = make_control(
+        tag_name="input",
+        attributes={
+            "id": "question_123",
+            "type": "text",
+            "role": "combobox",
+            "aria-labelledby": "question_123-label",
+            "aria-required": "true",
+            "class": "select__input",
+        },
+    )
+
+    page = make_page([combobox])
+    browser_session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=browser_session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert form.fields[0].field_type == FormFieldType.SELECT
+    assert form.fields[0].required is True
+
+
+def test_file_input_uses_semantic_id_for_label_when_visible_label_is_generic():
+    resume = make_control(
+        tag_name="input",
+        attributes={
+            "id": "resume",
+            "type": "file",
+        },
+    )
+
+    page = make_page(
+        [resume],
+        labels={
+            "resume": "Attach",
+        },
+    )
+    browser_session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=browser_session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert form.fields[0].field_type == FormFieldType.FILE
+    assert form.fields[0].label.lower() == "resume"
+
+def test_greenhouse_combobox_uses_aria_labelledby_for_label():
+    combobox = make_control(
+        tag_name="input",
+        attributes={
+            "id": "question_12836847007",
+            "type": "text",
+            "role": "combobox",
+            "aria-labelledby": (
+                "question_12836847007-label"
+            ),
+            "aria-required": "true",
+            "class": "select__input",
+        },
+    )
+
+    page = make_page(
+        [combobox],
+        labelled_by={
+            "question_12836847007-label": (
+                "Are you authorized to work in the U.S.?*"
+            ),
+        },
+    )
+
+    browser_session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=browser_session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.field_id == "question_12836847007"
+    assert field.field_type == FormFieldType.SELECT
+    assert field.required is True
+    assert (
+        field.label
+        == "Are you authorized to work in the U.S.?*"
+    )
+
+
+def test_cover_letter_file_input_uses_semantic_id_for_label():
+    cover_letter = make_control(
+        tag_name="input",
+        attributes={
+            "id": "cover_letter",
+            "type": "file",
+        },
+    )
+
+    page = make_page(
+        [cover_letter],
+        labels={
+            "cover_letter": "Attach",
+        },
+    )
+    browser_session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=browser_session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.field_id == "cover_letter"
+    assert field.field_type == FormFieldType.FILE
+    assert field.label.lower() == "cover letter"
