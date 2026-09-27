@@ -191,3 +191,20 @@ first_name: [
 
     with pytest.raises(ApplicationAnswerConfigError):
         loader.load(path)
+
+def test_country_is_allowed_verified_profile_field(
+    loader,
+    tmp_path,
+):
+    path = write_yaml(
+        tmp_path,
+        """
+country: United States
+""",
+    )
+
+    result = loader.load(path)
+
+    assert result == {
+        "country": "United States",
+    }

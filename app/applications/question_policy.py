@@ -133,12 +133,17 @@ class ApplicationQuestionPolicy:
         r"^(?:what is |what's |enter |provide |please enter |"
         r"please provide |your )?(?:your )?city[?:.]?$",
 
+        r"^location \(city\)[?:.]?$",
+
         r"^(?:what is |what's |enter |provide |please enter |"
         r"please provide |your )?(?:your )?state[?:.]?$",
 
         r"^(?:what is |what's |enter |provide |please enter |"
         r"please provide |your )?(?:your )?"
         r"(?:zip|zip code|postal code)[?:.]?$",
+
+        r"^(?:what is |what's |enter |provide |please enter |"
+        r"please provide |your )?(?:your )?country[?:.]?$",
     )
 
     def classify(

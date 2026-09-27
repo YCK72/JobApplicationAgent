@@ -261,3 +261,16 @@ def test_authorization_never_allows_submission(
 
     assert result.status == ExternalFieldPolicyStatus.ALLOWED
     assert result.may_submit is False
+
+def test_country_select_remains_blocked():
+    result = ExternalFieldExecutionPolicy().authorize(
+        make_action(
+            "Country",
+            field_type=FormFieldType.SELECT,
+            value="United States",
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.BLOCKED
+    assert result.may_mutate is False
+    assert result.may_submit is False

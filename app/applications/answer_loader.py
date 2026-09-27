@@ -34,6 +34,7 @@ class ApplicationAnswerLoader:
             "city",
             "state",
             "postal_code",
+            "country",
         }
     )
 

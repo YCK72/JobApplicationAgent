@@ -367,3 +367,55 @@ def test_personal_website_still_maps_to_website():
 
     assert result.status == AnswerStatus.RESOLVED
     assert result.answer == "https://example.com"
+
+def test_country_resolves_only_from_verified_country():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "country": "United States",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve("Country")
+
+    assert result.status == AnswerStatus.RESOLVED
+    assert result.answer == "United States"
+
+
+def test_location_city_maps_to_verified_city():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "city": "Example City",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve("Location (City)")
+
+    assert result.status == AnswerStatus.RESOLVED
+    assert result.answer == "Example City"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Location",
+        "Working location",
+        "Preferred location",
+        "Preferred working location",
+    ],
+)
+def test_ambiguous_location_does_not_resolve_from_city(
+    question,
+):
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "city": "Example City",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve(question)
+
+    assert result.status == AnswerStatus.NEEDS_REVIEW
+    assert result.answer is None

@@ -230,3 +230,37 @@ def test_safe_profile_aliases_are_safe(
     result = policy.classify(question)
 
     assert result.policy == QuestionPolicy.SAFE
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Country",
+        "What is your country?",
+        "Location (City)",
+    ],
+)
+def test_factual_location_profile_questions_are_safe(
+    policy,
+    question,
+):
+    result = policy.classify(question)
+
+    assert result.policy == QuestionPolicy.SAFE
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Location",
+        "Working location",
+        "Preferred location",
+        "Preferred working location",
+    ],
+)
+def test_ambiguous_or_preference_location_questions_require_review(
+    policy,
+    question,
+):
+    result = policy.classify(question)
+
+    assert result.policy == QuestionPolicy.REVIEW

@@ -49,9 +49,11 @@ class ApplicationAnswerResolver:
         ("portfolio", r"portfolio(?: website| url)?"),
         ("website", r"(?:personal )?website"),
         ("address", r"address"),
-        ("city", r"city"),
+        ("city", r"location \(city\)"),
+        ("city", r"\bcity\b"),
         ("state", r"state"),
         ("postal_code", r"(?:zip|zip code|postal code)"),
+        ("country", r"\bcountry\b"),
     )
 
     def __init__(
