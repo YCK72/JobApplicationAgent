@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock, PropertyMock, call
-
+from app.browser.playwright_form_writer import PlaywrightFieldWriter
 from app.applications.browser_form_executor import (
     BrowserExecutionStatus,
     BrowserFormExecutor,
@@ -375,3 +375,127 @@ def test_navigation_between_fields_blocks_second_playwright_fill():
         '[id="first_name"]'
     )
     first_locator.fill.assert_called_once_with("Test")
+
+def test_external_sensitive_field_never_reaches_playwright_fill():
+    page = MagicMock()
+    page.url = "https://example.com/application"
+
+    writer = PlaywrightFieldWriter(page)
+    executor = BrowserFormExecutor(writer)
+
+    action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="work_authorization",
+            label="Are you authorized to work in the United States?",
+            field_type=FormFieldType.TEXT,
+        ),
+        value="Forged Value",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Forged sensitive execution plan.",
+    )
+
+    target_authorization = ExecutionTargetAuthorization(
+        status=ExecutionTargetStatus.AUTHORIZED,
+        reason="Explicit test authorization.",
+        target_url="https://example.com/application",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=target_authorization,
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    page.locator.assert_not_called()
+
+
+def test_external_review_field_never_reaches_playwright_fill():
+    page = MagicMock()
+    page.url = "https://example.com/application"
+
+    writer = PlaywrightFieldWriter(page)
+    executor = BrowserFormExecutor(writer)
+
+    action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="short_answer",
+            label="Why are you interested in this role?",
+            field_type=FormFieldType.TEXTAREA,
+        ),
+        value="Generated answer",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Forged review execution plan.",
+    )
+
+    target_authorization = ExecutionTargetAuthorization(
+        status=ExecutionTargetStatus.AUTHORIZED,
+        reason="Explicit test authorization.",
+        target_url="https://example.com/application",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=target_authorization,
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+
+    page.locator.assert_not_called()
+
+
+def test_external_safe_profile_field_reaches_playwright_fill():
+    page = MagicMock()
+    page.url = "https://example.com/application"
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+    executor = BrowserFormExecutor(writer)
+
+    action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="first_name",
+            label="First Name",
+            field_type=FormFieldType.TEXT,
+        ),
+        value="Verified Name",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Verified safe profile field.",
+    )
+
+    target_authorization = ExecutionTargetAuthorization(
+        status=ExecutionTargetStatus.AUTHORIZED,
+        reason="Explicit test authorization.",
+        target_url="https://example.com/application",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=target_authorization,
+    )
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    locator.fill.assert_called_once_with(
+        "Verified Name"
+    )

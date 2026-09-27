@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, PropertyMock, call
+from app.applications.execution_guard import ExternalExecutionGuard
 
 from app.applications.browser_form_executor import (
     BrowserExecutionStatus,
@@ -514,3 +515,204 @@ def test_fragment_difference_blocks_mutation():
     assert result.completed_actions == 0
 
     writer.write_text.assert_not_called()
+
+def test_external_sensitive_field_never_reaches_writer():
+    writer = make_writer()
+
+    executor = BrowserFormExecutor(writer)
+
+    action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="work_authorization",
+            label="Are you authorized to work in the United States?",
+            field_type=FormFieldType.TEXT,
+        ),
+        value="Verified Value",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Forged execution plan.",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.write_text.assert_not_called()
+
+
+def test_external_review_field_never_reaches_writer():
+    writer = make_writer()
+
+    executor = BrowserFormExecutor(writer)
+
+    action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="short_answer",
+            label="Why are you interested in this role?",
+            field_type=FormFieldType.TEXTAREA,
+        ),
+        value="Generated answer",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Forged execution plan.",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+
+    writer.write_text.assert_not_called()
+
+
+def test_external_safe_profile_field_reaches_writer():
+    writer = make_writer()
+
+    executor = BrowserFormExecutor(writer)
+
+    action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="first_name",
+            label="First Name",
+            field_type=FormFieldType.TEXT,
+        ),
+        value="Verified Name",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Verified safe profile field.",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    writer.write_text.assert_called_once_with(
+        field=action.field,
+        value="Verified Name",
+    )
+
+
+def test_external_safe_field_before_sensitive_field_stops_at_sensitive():
+    writer = make_writer()
+
+    executor = BrowserFormExecutor(writer)
+
+    safe_action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="first_name",
+            label="First Name",
+            field_type=FormFieldType.TEXT,
+        ),
+        value="Verified Name",
+    )
+
+    sensitive_action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="sponsorship",
+            label="Will you require visa sponsorship?",
+            field_type=FormFieldType.TEXT,
+        ),
+        value="Forged Value",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(
+            safe_action,
+            sensitive_action,
+        ),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Mixed forged execution plan.",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    writer.write_text.assert_called_once_with(
+        field=safe_action.field,
+        value="Verified Name",
+    )
+
+def test_local_fixture_does_not_use_external_semantic_policy(
+    tmp_path,
+):
+    fixture_path = tmp_path / "safe_application_form.html"
+    fixture_path.write_text(
+        "<html></html>",
+        encoding="utf-8",
+    )
+
+    fixture_url = fixture_path.resolve().as_uri()
+
+    writer = MagicMock()
+    writer.current_url = fixture_url
+
+    external_policy = MagicMock()
+
+    executor = BrowserFormExecutor(
+        writer,
+        external_field_policy=external_policy,
+    )
+
+    action = AuthorizedFieldAction(
+        field=FormField(
+            field_id="short_answer",
+            label="Short Answer",
+            field_type=FormFieldType.TEXTAREA,
+        ),
+        value="Controlled fixture value",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Controlled local fixture.",
+    )
+
+    guard = ExternalExecutionGuard(
+        allowed_local_fixture=fixture_path,
+    )
+
+    authorization = guard.authorize(fixture_url)
+
+    result = executor.execute(
+        plan,
+        target_authorization=authorization,
+    )
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
+
+    external_policy.authorize.assert_not_called()
+
+    writer.write_text.assert_called_once_with(
+        field=action.field,
+        value="Controlled fixture value",
+    )

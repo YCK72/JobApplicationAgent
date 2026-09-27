@@ -7,18 +7,15 @@ from app.applications.execution_guard import (
     ExecutionTargetAuthorization,
     ExternalExecutionGuard,
 )
-from app.applications.form_executor import (
-    FormExecutionPlan,
+from app.applications.external_field_policy import (
+    ExternalFieldExecutionPolicy,
 )
+from app.applications.form_executor import FormExecutionPlan
 from app.applications.form_models import FormFieldType
 from app.browser.form_writer import BrowserFieldWriter
 
 
 class BrowserExecutionStatus(str, Enum):
-    """
-    Outcome of attempting an authorized browser execution plan.
-    """
-
     COMPLETED = "COMPLETED"
     BLOCKED = "BLOCKED"
     FAILED = "FAILED"
@@ -26,12 +23,6 @@ class BrowserExecutionStatus(str, Enum):
 
 @dataclass(frozen=True)
 class BrowserExecutionResult:
-    """
-    Result of browser-side field execution.
-
-    Submission is never authorized by this result.
-    """
-
     status: BrowserExecutionStatus
     completed_actions: int
     reason: str
@@ -47,16 +38,16 @@ class BrowserExecutionResult:
 
 class BrowserFormExecutor:
     """
-    Execute an already-authorized FormExecutionPlan through a narrow
-    BrowserFieldWriter boundary.
+    Executes only previously authorized browser field actions.
 
-    The execution plan, mutation target authorization, and writer's actual
-    current browser target must all agree before mutation is permitted.
+    External HTTP/HTTPS mutation receives an additional execution-time
+    semantic field-policy check.
 
-    Target identity is revalidated before every individual field write.
+    Local controlled fixture execution remains available for lower-level
+    browser testing and is still protected by target-bound authorization.
 
-    This class cannot navigate, click arbitrary controls, upload files,
-    bypass human verification, or submit applications.
+    This executor does not navigate, click controls, select options,
+    upload files, bypass verification, or submit applications.
     """
 
     _TEXT_FIELD_TYPES = {
@@ -69,8 +60,14 @@ class BrowserFormExecutor:
     def __init__(
         self,
         writer: BrowserFieldWriter,
+        external_field_policy: ExternalFieldExecutionPolicy | None = None,
     ) -> None:
-        self.writer = writer
+        self._writer = writer
+        self._external_field_policy = (
+            external_field_policy
+            if external_field_policy is not None
+            else ExternalFieldExecutionPolicy()
+        )
 
     def execute(
         self,
@@ -79,21 +76,21 @@ class BrowserFormExecutor:
     ) -> BrowserExecutionResult:
         if not target_authorization.may_mutate:
             return self._blocked(
-                "Browser mutation target is not authorized."
+                "Execution target is not authorized for browser mutation."
             )
 
         if target_authorization.may_submit:
             return self._blocked(
-                "Target authorization unexpectedly allows submission."
+                "Execution target unexpectedly authorizes submission."
             )
 
         if target_authorization.target_url is None:
             return self._blocked(
-                "Browser mutation authorization is not bound to a target."
+                "Execution target authorization is not bound to a URL."
             )
 
         target_error = self._target_error(
-            target_authorization
+            target_authorization.target_url
         )
 
         if target_error is not None:
@@ -112,18 +109,8 @@ class BrowserFormExecutor:
         completed_actions = 0
 
         for action in plan.actions:
-            if action.field.field_type not in self._TEXT_FIELD_TYPES:
-                return BrowserExecutionResult(
-                    status=BrowserExecutionStatus.BLOCKED,
-                    completed_actions=completed_actions,
-                    reason=(
-                        "Execution plan contains an unsupported "
-                        "browser field type."
-                    ),
-                )
-
             target_error = self._target_error(
-                target_authorization
+                target_authorization.target_url
             )
 
             if target_error is not None:
@@ -133,8 +120,42 @@ class BrowserFormExecutor:
                     reason=target_error,
                 )
 
+            if action.field.field_type not in self._TEXT_FIELD_TYPES:
+                return BrowserExecutionResult(
+                    status=BrowserExecutionStatus.BLOCKED,
+                    completed_actions=completed_actions,
+                    reason=(
+                        "Execution plan contains a field type that "
+                        "is not supported for browser text mutation."
+                    ),
+                )
+
+            if self._is_external_target(
+                target_authorization.target_url
+            ):
+                field_authorization = (
+                    self._external_field_policy.authorize(action)
+                )
+
+                if not field_authorization.may_mutate:
+                    return BrowserExecutionResult(
+                        status=BrowserExecutionStatus.BLOCKED,
+                        completed_actions=completed_actions,
+                        reason=field_authorization.reason,
+                    )
+
+                if field_authorization.may_submit:
+                    return BrowserExecutionResult(
+                        status=BrowserExecutionStatus.BLOCKED,
+                        completed_actions=completed_actions,
+                        reason=(
+                            "External field policy unexpectedly "
+                            "authorizes submission."
+                        ),
+                    )
+
             try:
-                self.writer.write_text(
+                self._writer.write_text(
                     field=action.field,
                     value=action.value,
                 )
@@ -143,7 +164,7 @@ class BrowserFormExecutor:
                     status=BrowserExecutionStatus.FAILED,
                     completed_actions=completed_actions,
                     reason=(
-                        "Browser field execution failed: "
+                        "Browser field mutation failed: "
                         f"{exc}"
                     ),
                 )
@@ -160,33 +181,32 @@ class BrowserFormExecutor:
 
     def _target_error(
         self,
-        target_authorization: ExecutionTargetAuthorization,
+        authorized_target_url: str,
     ) -> str | None:
-        authorized_url = target_authorization.target_url
-
-        if authorized_url is None:
-            return (
-                "Browser mutation authorization is not bound "
-                "to a target."
-            )
-
         try:
             current_url = ExternalExecutionGuard.normalize_target_url(
-                self.writer.current_url
+                self._writer.current_url
             )
-        except (TypeError, ValueError, OSError):
+        except (TypeError, ValueError):
             return (
-                "Current browser target could not be safely "
-                "normalized."
+                "Current browser target could not be safely normalized."
             )
 
-        if current_url != authorized_url:
+        if current_url != authorized_target_url:
             return (
                 "Current browser target does not match the "
-                "authorized mutation target."
+                "authorized execution target."
             )
 
         return None
+
+    @staticmethod
+    def _is_external_target(
+        target_url: str,
+    ) -> bool:
+        return target_url.startswith(
+            ("http://", "https://")
+        )
 
     @staticmethod
     def _blocked(
