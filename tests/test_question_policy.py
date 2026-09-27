@@ -73,6 +73,11 @@ def test_direct_profile_requests_are_safe(
         "What is your citizenship?",
         "Are you a permanent resident?",
         "Please select your race or ethnicity.",
+        "Are you Hispanic/Latino?",
+        "Are you Hispanic or Latino?",
+        "Hispanic ethnicity",
+        "Are you Latina?",
+        "Do you identify as Latinx?",
         "What is your gender?",
         "Do you have a disability?",
         "What is your veteran status?",
@@ -160,6 +165,7 @@ def test_sensitive_policy_has_priority_over_safe(
 
     assert result.policy == QuestionPolicy.SENSITIVE
 
+
 def test_sensitive_content_beats_review_language(
     policy,
 ):
@@ -200,6 +206,7 @@ def test_unknown_question_with_safe_word_is_not_necessarily_safe(
     )
 
     assert result.policy == QuestionPolicy.REVIEW
+
 
 def test_non_string_question_is_rejected(
     policy,

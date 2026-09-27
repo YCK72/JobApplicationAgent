@@ -439,6 +439,70 @@ def test_label_fallback_order() -> None:
     assert form.fields[2].label == "Phone Number"
     assert form.fields[3].label == "preferred location"
 
+def test_required_marker_is_removed_from_semantic_label() -> None:
+    first_name = make_control(
+        attributes={
+            "id": "first_name",
+            "name": "first_name",
+            "type": "text",
+            "required": "",
+        },
+    )
+
+    email = make_control(
+        attributes={
+            "id": "email",
+            "name": "email",
+            "type": "text",
+            "autocomplete": "email",
+            "aria-required": "true",
+        },
+    )
+
+    linkedin = make_control(
+        attributes={
+            "id": "linkedin",
+            "name": "linkedin",
+            "type": "text",
+            "required": "",
+        },
+    )
+
+    page = make_page(
+        controls=[
+            first_name,
+            email,
+            linkedin,
+        ],
+        labels={
+            "first_name": "First Name*",
+            "email": "Email *",
+            "linkedin": "LinkedIn Profile*",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 3
+
+    assert form.fields[0].label == "First Name"
+    assert form.fields[0].required is True
+
+    assert form.fields[1].label == "Email"
+    assert form.fields[1].required is True
+
+    assert form.fields[2].label == "LinkedIn Profile"
+    assert form.fields[2].required is True
 
 def test_required_supports_required_and_aria_required() -> None:
     required = make_control(
@@ -821,8 +885,8 @@ def test_greenhouse_combobox_uses_aria_labelledby_for_label():
     assert field.field_type == FormFieldType.SELECT
     assert field.required is True
     assert (
-        field.label
-        == "Are you authorized to work in the U.S.?*"
+            field.label
+            == "Are you authorized to work in the U.S.?"
     )
 
 

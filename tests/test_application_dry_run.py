@@ -136,6 +136,50 @@ def test_manual_form_remains_whole_form_blocked():
     assert report.would_fill_count == 1
 
 
+def test_hispanic_latino_demographic_field_is_never_would_fill():
+    field = make_field(
+        "hispanic_ethnicity",
+        "Are you Hispanic/Latino?",
+        FormFieldType.SELECT,
+        required=False,
+    )
+
+    form = make_form(field)
+
+    plan = FormAnswerPlan(
+        fields=(
+            FieldPlan(
+                field=field,
+                action=FieldAction.SKIP_MANUAL,
+                value=None,
+                reason=(
+                    "Question requests sensitive candidate "
+                    "information that must not be inferred."
+                ),
+            ),
+        ),
+        status=FormPlanStatus.MANUAL_REQUIRED,
+        reason="Manual candidate input is required.",
+    )
+
+    report = ApplicationDryRunReporter().build_report(
+        form,
+        plan,
+    )
+
+    assert report.execution_status == ExecutionPlanStatus.BLOCKED
+    assert report.would_execute is False
+    assert report.may_submit is False
+    assert report.would_fill_count == 0
+
+    assert len(report.fields) == 1
+    assert (
+        report.fields[0].status
+        == DryRunFieldStatus.MANUAL_REQUIRED
+    )
+    assert report.fields[0].value is None
+
+
 def test_review_field_is_reported_without_value():
     field = make_field(
         "why_company",

@@ -78,6 +78,8 @@ def test_safe_verified_profile_field_is_allowed(
         "Are you a permanent resident?",
         "What is your race?",
         "What is your ethnicity?",
+        "Are you Hispanic/Latino?",
+        "Are you Hispanic or Latino?",
         "What is your gender?",
         "What is your sex?",
         "What is your sexual orientation?",

@@ -489,8 +489,22 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
 
     @staticmethod
     def _clean_text(value: str) -> str:
-        return " ".join(value.split())
+        """
+        Normalize human-readable Greenhouse text.
 
+        Greenhouse commonly appends a visual "*" to required field labels.
+        Requiredness is represented separately by FormField.required, so the
+        decorative marker must not remain part of the semantic field label.
+
+        Only trailing asterisks are removed. Asterisks elsewhere in the text
+        are preserved.
+        """
+        cleaned = " ".join(value.split())
+
+        while cleaned.endswith("*"):
+            cleaned = cleaned[:-1].rstrip()
+
+        return cleaned
     @classmethod
     def _humanize_identifier(
         cls,
