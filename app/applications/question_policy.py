@@ -104,7 +104,8 @@ class ApplicationQuestionPolicy:
         r"please provide |your )?(?:your )?full name[?:.]?$",
 
         r"^(?:what is |what's |enter |provide |please enter |"
-        r"please provide |your )?(?:your )?preferred name[?:.]?$",
+        r"please provide |your )?(?:your )?"
+        r"preferred(?: first)? name[?:.]?$",
 
         r"^(?:what is |what's |enter |provide |please enter |"
         r"please provide |your )?(?:your )?email"
@@ -124,7 +125,7 @@ class ApplicationQuestionPolicy:
         r"your )?(?:your )?portfolio(?: website| url)?[?:.]?$",
 
         r"^(?:enter |provide |please enter |please provide |"
-        r"your )?(?:your )?personal website[?:.]?$",
+        r"your )?(?:your )?(?:personal )?website[?:.]?$",
 
         r"^(?:what is |what's |enter |provide |please enter |"
         r"please provide |your )?(?:your )?address[?:.]?$",

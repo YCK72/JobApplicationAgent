@@ -38,16 +38,16 @@ class ApplicationAnswerResolver:
     """
 
     FIELD_PATTERNS = (
+        ("preferred_name", r"preferred(?: first)? name"),
         ("first_name", r"first name"),
         ("last_name", r"last name"),
         ("full_name", r"full name"),
-        ("preferred_name", r"preferred name"),
         ("email", r"email(?: address)?"),
         ("phone", r"phone(?: number)?"),
         ("linkedin", r"linkedin(?: profile| url)?"),
         ("github", r"github(?: profile| url)?"),
         ("portfolio", r"portfolio(?: website| url)?"),
-        ("website", r"personal website"),
+        ("website", r"(?:personal )?website"),
         ("address", r"address"),
         ("city", r"city"),
         ("state", r"state"),

@@ -281,3 +281,89 @@ def test_linkedin_url_does_not_map_to_generic_website(
         result.answer
         == "https://linkedin.com/in/example"
     )
+
+def test_preferred_first_name_maps_to_preferred_name():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "first_name": "Legal",
+            "preferred_name": "Preferred",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve("Preferred First Name")
+
+    assert result.status == AnswerStatus.RESOLVED
+    assert result.answer == "Preferred"
+
+
+def test_preferred_first_name_does_not_fall_back_to_first_name():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "first_name": "Legal",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve("Preferred First Name")
+
+    assert result.status == AnswerStatus.NEEDS_REVIEW
+    assert result.answer is None
+
+
+def test_website_maps_to_verified_website():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "website": "https://example.com",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve("Website")
+
+    assert result.status == AnswerStatus.RESOLVED
+    assert result.answer == "https://example.com"
+
+
+def test_website_does_not_fall_back_to_portfolio():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "portfolio": "https://portfolio.example.com",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve("Website")
+
+    assert result.status == AnswerStatus.NEEDS_REVIEW
+    assert result.answer is None
+
+
+def test_portfolio_website_still_maps_to_portfolio():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "portfolio": "https://portfolio.example.com",
+            "website": "https://example.com",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve("Portfolio Website")
+
+    assert result.status == AnswerStatus.RESOLVED
+    assert result.answer == "https://portfolio.example.com"
+
+
+def test_personal_website_still_maps_to_website():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "portfolio": "https://portfolio.example.com",
+            "website": "https://example.com",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    result = resolver.resolve("Personal Website")
+
+    assert result.status == AnswerStatus.RESOLVED
+    assert result.answer == "https://example.com"

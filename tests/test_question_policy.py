@@ -213,3 +213,20 @@ def test_non_string_question_is_rejected(
 ):
     with pytest.raises(TypeError):
         policy.classify(None)
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Preferred First Name",
+        "Preferred Name",
+        "Website",
+        "Personal Website",
+    ],
+)
+def test_safe_profile_aliases_are_safe(
+    policy,
+    question,
+):
+    result = policy.classify(question)
+
+    assert result.policy == QuestionPolicy.SAFE
