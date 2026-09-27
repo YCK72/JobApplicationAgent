@@ -6,6 +6,9 @@ from app.applications.browser_form_executor import (
     BrowserExecutionStatus,
     BrowserFormExecutor,
 )
+from app.applications.execution_guard import (
+    ExternalExecutionGuard,
+)
 from app.applications.form_executor import (
     AuthorizedFieldAction,
     ExecutionPlanStatus,
@@ -50,6 +53,25 @@ def main() -> None:
         )
 
     fixture_url = FIXTURE_PATH.resolve().as_uri()
+
+    guard = ExternalExecutionGuard(
+        allowed_local_fixture=FIXTURE_PATH,
+    )
+
+    target_authorization = guard.authorize(
+        fixture_url
+    )
+
+    if not target_authorization.may_mutate:
+        raise RuntimeError(
+            "Local fixture was not authorized: "
+            f"{target_authorization.reason}"
+        )
+
+    if target_authorization.may_submit:
+        raise RuntimeError(
+            "Target authorization unexpectedly allowed submission."
+        )
 
     fields = (
         make_field(
@@ -105,7 +127,10 @@ def main() -> None:
         writer = PlaywrightFieldWriter(page)
         executor = BrowserFormExecutor(writer)
 
-        result = executor.execute(plan)
+        result = executor.execute(
+            plan,
+            target_authorization=target_authorization,
+        )
 
         if result.status != BrowserExecutionStatus.COMPLETED:
             raise RuntimeError(
@@ -134,14 +159,18 @@ def main() -> None:
                 "Written values do not match expected values."
             )
 
-        country_value = page.locator("#country").input_value()
+        country_value = page.locator(
+            "#country"
+        ).input_value()
 
         if country_value != "":
             raise RuntimeError(
                 "Country select was unexpectedly modified."
             )
 
-        resume_value = page.locator("#resume").input_value()
+        resume_value = page.locator(
+            "#resume"
+        ).input_value()
 
         if resume_value != "":
             raise RuntimeError(
@@ -158,8 +187,12 @@ def main() -> None:
             )
 
         print("Local Brave form-fill smoke test PASSED")
-        print(f"Completed actions: {result.completed_actions}")
-        print(f"Submission allowed: {result.may_submit}")
+        print(
+            f"Completed actions: {result.completed_actions}"
+        )
+        print(
+            f"Submission allowed: {result.may_submit}"
+        )
         print("Text fields: correctly filled")
         print("Country select: untouched")
         print("Resume upload: untouched")

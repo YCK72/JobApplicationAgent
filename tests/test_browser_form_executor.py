@@ -1,8 +1,12 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 from app.applications.browser_form_executor import (
     BrowserExecutionStatus,
     BrowserFormExecutor,
+)
+from app.applications.execution_guard import (
+    ExecutionTargetAuthorization,
+    ExecutionTargetStatus,
 )
 from app.applications.form_executor import (
     AuthorizedFieldAction,
@@ -49,6 +53,26 @@ def make_plan(
     )
 
 
+def make_target_authorization(
+    *,
+    status: ExecutionTargetStatus = ExecutionTargetStatus.AUTHORIZED,
+) -> ExecutionTargetAuthorization:
+    return ExecutionTargetAuthorization(
+        status=status,
+        reason="Test target authorization.",
+    )
+
+
+def execute(
+    executor: BrowserFormExecutor,
+    plan: FormExecutionPlan,
+):
+    return executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+
 def test_authorized_text_action_reaches_writer():
     writer = MagicMock()
     executor = BrowserFormExecutor(writer)
@@ -61,7 +85,7 @@ def test_authorized_text_action_reaches_writer():
         )
     )
 
-    result = executor.execute(plan)
+    result = execute(executor, plan)
 
     assert result.status == BrowserExecutionStatus.COMPLETED
     assert result.succeeded is True
@@ -99,14 +123,20 @@ def test_multiple_authorized_actions_execute_in_order():
         ),
     )
 
-    result = executor.execute(plan)
+    result = execute(executor, plan)
 
     assert result.status == BrowserExecutionStatus.COMPLETED
     assert result.completed_actions == 2
 
     assert writer.write_text.call_args_list == [
-        (( ), {"field": first_name, "value": "Test"}),
-        (( ), {"field": email, "value": "test@example.com"}),
+        call(
+            field=first_name,
+            value="Test",
+        ),
+        call(
+            field=email,
+            value="test@example.com",
+        ),
     ]
 
 
@@ -119,11 +149,12 @@ def test_blocked_plan_never_reaches_writer():
         status=ExecutionPlanStatus.BLOCKED,
     )
 
-    result = executor.execute(plan)
+    result = execute(executor, plan)
 
     assert result.status == BrowserExecutionStatus.BLOCKED
     assert result.succeeded is False
     assert result.completed_actions == 0
+    assert result.may_submit is False
 
     writer.write_text.assert_not_called()
 
@@ -143,10 +174,11 @@ def test_unsupported_field_type_never_reaches_writer():
         )
     )
 
-    result = executor.execute(plan)
+    result = execute(executor, plan)
 
     assert result.status == BrowserExecutionStatus.BLOCKED
     assert result.completed_actions == 0
+    assert result.may_submit is False
 
     writer.write_text.assert_not_called()
 
@@ -166,10 +198,11 @@ def test_file_field_never_reaches_writer():
         )
     )
 
-    result = executor.execute(plan)
+    result = execute(executor, plan)
 
     assert result.status == BrowserExecutionStatus.BLOCKED
     assert result.completed_actions == 0
+    assert result.may_submit is False
 
     writer.write_text.assert_not_called()
 
@@ -186,11 +219,12 @@ def test_writer_failure_stops_execution():
         make_action()
     )
 
-    result = executor.execute(plan)
+    result = execute(executor, plan)
 
     assert result.status == BrowserExecutionStatus.FAILED
     assert result.succeeded is False
     assert result.completed_actions == 0
+    assert result.may_submit is False
     assert "simulated browser failure" in result.reason
 
     writer.write_text.assert_called_once()
@@ -209,7 +243,10 @@ def test_failure_stops_later_actions():
 
     plan = make_plan(
         make_action(
-            field=make_field("first_name", "First Name"),
+            field=make_field(
+                "first_name",
+                "First Name",
+            ),
             value="Test",
         ),
         make_action(
@@ -221,15 +258,19 @@ def test_failure_stops_later_actions():
             value="test@example.com",
         ),
         make_action(
-            field=make_field("city", "City"),
+            field=make_field(
+                "city",
+                "City",
+            ),
             value="Seattle",
         ),
     )
 
-    result = executor.execute(plan)
+    result = execute(executor, plan)
 
     assert result.status == BrowserExecutionStatus.FAILED
     assert result.completed_actions == 1
+    assert result.may_submit is False
     assert writer.write_text.call_count == 2
 
 
@@ -237,12 +278,59 @@ def test_empty_authorized_plan_completes_without_writer_calls():
     writer = MagicMock()
     executor = BrowserFormExecutor(writer)
 
-    result = executor.execute(
-        make_plan()
+    result = execute(
+        executor,
+        make_plan(),
     )
 
     assert result.status == BrowserExecutionStatus.COMPLETED
     assert result.succeeded is True
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.write_text.assert_not_called()
+
+
+def test_blocked_target_never_reaches_writer():
+    writer = MagicMock()
+    executor = BrowserFormExecutor(writer)
+
+    plan = make_plan(
+        make_action()
+    )
+
+    target_authorization = make_target_authorization(
+        status=ExecutionTargetStatus.BLOCKED,
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=target_authorization,
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.succeeded is False
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.write_text.assert_not_called()
+
+
+def test_empty_plan_still_requires_target_authorization():
+    writer = MagicMock()
+    executor = BrowserFormExecutor(writer)
+
+    target_authorization = make_target_authorization(
+        status=ExecutionTargetStatus.BLOCKED,
+    )
+
+    result = executor.execute(
+        make_plan(),
+        target_authorization=target_authorization,
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.succeeded is False
     assert result.completed_actions == 0
     assert result.may_submit is False
 

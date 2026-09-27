@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from app.applications.execution_guard import (
+    ExecutionTargetAuthorization,
+)
 from app.applications.form_executor import (
     FormExecutionPlan,
 )
@@ -46,6 +49,9 @@ class BrowserFormExecutor:
     Execute an already-authorized FormExecutionPlan through a narrow
     BrowserFieldWriter boundary.
 
+    Both the execution plan and browser mutation target must be
+    independently authorized before any field reaches the writer.
+
     This class cannot navigate, click arbitrary controls, upload files,
     bypass human verification, or submit applications.
     """
@@ -66,7 +72,18 @@ class BrowserFormExecutor:
     def execute(
         self,
         plan: FormExecutionPlan,
+        target_authorization: ExecutionTargetAuthorization,
     ) -> BrowserExecutionResult:
+        if not target_authorization.may_mutate:
+            return self._blocked(
+                "Browser mutation target is not authorized."
+            )
+
+        if target_authorization.may_submit:
+            return self._blocked(
+                "Target authorization unexpectedly allows submission."
+            )
+
         if not plan.may_execute:
             return self._blocked(
                 "Execution plan is not authorized."
