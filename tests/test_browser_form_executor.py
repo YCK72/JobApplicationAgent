@@ -1,4 +1,6 @@
 from unittest.mock import MagicMock, PropertyMock, call
+
+import pytest
 from app.applications.execution_guard import ExternalExecutionGuard
 
 from app.applications.browser_form_executor import (
@@ -716,3 +718,185 @@ def test_local_fixture_does_not_use_external_semantic_policy(
         field=action.field,
         value="Controlled fixture value",
     )
+def test_local_fixture_select_reaches_writer(
+    tmp_path,
+):
+    fixture_path = tmp_path / "safe_application_form.html"
+    fixture_path.write_text(
+        "<html></html>",
+        encoding="utf-8",
+    )
+
+    fixture_url = fixture_path.resolve().as_uri()
+
+    writer = MagicMock()
+    writer.current_url = fixture_url
+
+    external_policy = MagicMock()
+
+    executor = BrowserFormExecutor(
+        writer,
+        external_field_policy=external_policy,
+    )
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "Select...",
+            "United States",
+            "Canada",
+        ],
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="United States",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Controlled local SELECT fixture.",
+    )
+
+    guard = ExternalExecutionGuard(
+        allowed_local_fixture=fixture_path,
+    )
+
+    authorization = guard.authorize(fixture_url)
+
+    result = executor.execute(
+        plan,
+        target_authorization=authorization,
+    )
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    external_policy.authorize.assert_not_called()
+
+    writer.select_option.assert_called_once_with(
+        field=field,
+        value="United States",
+    )
+
+    writer.write_text.assert_not_called()
+
+
+def test_external_select_remains_blocked():
+    writer = make_writer()
+
+    executor = BrowserFormExecutor(writer)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+            "Canada",
+        ],
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="United States",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Verified SELECT execution plan.",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.select_option.assert_not_called()
+    writer.write_text.assert_not_called()
+
+
+def test_external_sensitive_select_remains_blocked():
+    writer = make_writer()
+
+    executor = BrowserFormExecutor(writer)
+
+    field = FormField(
+        field_id="sponsorship",
+        label="Will you require visa sponsorship?",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "Yes",
+            "No",
+        ],
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="No",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Forged sensitive SELECT plan.",
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.select_option.assert_not_called()
+    writer.write_text.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "field_type",
+    [
+        FormFieldType.RADIO,
+        FormFieldType.CHECKBOX,
+        FormFieldType.FILE,
+        FormFieldType.UNKNOWN,
+    ],
+)
+def test_non_select_non_text_controls_remain_blocked(
+    field_type: FormFieldType,
+):
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = FormField(
+        field_id="unsupported",
+        label="Unsupported",
+        field_type=field_type,
+    )
+
+    plan = make_plan(
+        make_action(
+            field=field,
+            value="Verified Value",
+        )
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()

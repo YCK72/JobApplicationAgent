@@ -38,11 +38,14 @@ def make_field(
     field_id: str,
     label: str,
     field_type: FormFieldType,
+    *,
+    options: list[str] | None = None,
 ) -> FormField:
     return FormField(
         field_id=field_id,
         label=label,
         field_type=field_type,
+        options=options or [],
     )
 
 
@@ -94,6 +97,16 @@ def main() -> None:
             "Short Answer",
             FormFieldType.TEXTAREA,
         ),
+        make_field(
+            "country",
+            "Country",
+            FormFieldType.SELECT,
+            options=[
+                "Select a country",
+                "United States",
+                "Canada",
+            ],
+        ),
     )
 
     values = (
@@ -101,6 +114,7 @@ def main() -> None:
         "test@example.com",
         "555-0100",
         "Controlled local smoke test.",
+        "United States",
     )
 
     actions = tuple(
@@ -137,9 +151,9 @@ def main() -> None:
                 f"Execution failed: {result.reason}"
             )
 
-        if result.completed_actions != 4:
+        if result.completed_actions != 5:
             raise RuntimeError(
-                "Expected exactly four completed actions."
+                "Expected exactly five completed actions."
             )
 
         if result.may_submit:
@@ -147,25 +161,41 @@ def main() -> None:
                 "Execution unexpectedly allowed submission."
             )
 
-        actual_values = (
+        actual_text_values = (
             page.locator("#first_name").input_value(),
             page.locator("#email").input_value(),
             page.locator("#phone").input_value(),
             page.locator("#short_answer").input_value(),
         )
 
-        if actual_values != values:
+        expected_text_values = values[:4]
+
+        if actual_text_values != expected_text_values:
             raise RuntimeError(
-                "Written values do not match expected values."
+                "Written text values do not match expected values."
             )
 
-        country_value = page.locator(
-            "#country"
-        ).input_value()
+        country = page.locator("#country")
 
-        if country_value != "":
+        country_value = country.input_value()
+
+        if country_value != "US":
             raise RuntimeError(
-                "Country select was unexpectedly modified."
+                "Country SELECT did not resolve to the expected "
+                "native option value."
+            )
+
+        selected_country_label = country.locator(
+            "option:checked"
+        ).text_content()
+
+        if (
+            selected_country_label is None
+            or selected_country_label.strip() != "United States"
+        ):
+            raise RuntimeError(
+                "Country SELECT did not preserve the expected "
+                "visible option label."
             )
 
         resume_value = page.locator(
@@ -194,7 +224,10 @@ def main() -> None:
             f"Submission allowed: {result.may_submit}"
         )
         print("Text fields: correctly filled")
-        print("Country select: untouched")
+        print(
+            "Country select: United States "
+            "(native value US)"
+        )
         print("Resume upload: untouched")
         print("Form submission: not triggered")
 

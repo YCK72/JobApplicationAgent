@@ -10,7 +10,7 @@ class BrowserFieldWriter(ABC):
     Abstract boundary for narrowly scoped browser field mutation.
 
     Implementations may expose the current browser target URL and may
-    write only a value to an explicitly identified field.
+    mutate only explicitly identified, previously authorized fields.
 
     This interface does not expose navigation, clicking, file uploads,
     submission, or arbitrary page access.
@@ -31,6 +31,20 @@ class BrowserFieldWriter(ABC):
         value: str,
     ) -> None:
         """
-        Write a verified text value to one authorized field.
+        Write a verified text value to one authorized text-like field.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def select_option(
+        self,
+        field: FormField,
+        value: str,
+    ) -> None:
+        """
+        Select one verified option on one authorized native SELECT field.
+
+        This method does not authorize the field itself. Authorization must
+        already have occurred before this browser-mutation boundary.
         """
         raise NotImplementedError

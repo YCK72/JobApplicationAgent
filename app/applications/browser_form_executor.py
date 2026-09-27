@@ -43,11 +43,15 @@ class BrowserFormExecutor:
     External HTTP/HTTPS mutation receives an additional execution-time
     semantic field-policy check.
 
-    Local controlled fixture execution remains available for lower-level
-    browser testing and is still protected by target-bound authorization.
+    Local controlled fixture execution may perform:
+    - verified text-like mutation,
+    - deterministic native SELECT mutation.
 
-    This executor does not navigate, click controls, select options,
-    upload files, bypass verification, or submit applications.
+    External SELECT mutation remains prohibited unless the independent
+    external field policy explicitly authorizes it.
+
+    This executor does not navigate, arbitrarily click controls, upload
+    files, bypass verification, or submit applications.
     """
 
     _TEXT_FIELD_TYPES = {
@@ -56,6 +60,13 @@ class BrowserFormExecutor:
         FormFieldType.EMAIL,
         FormFieldType.PHONE,
     }
+
+    _SUPPORTED_FIELD_TYPES = (
+        _TEXT_FIELD_TYPES
+        | {
+            FormFieldType.SELECT,
+        }
+    )
 
     def __init__(
         self,
@@ -120,13 +131,13 @@ class BrowserFormExecutor:
                     reason=target_error,
                 )
 
-            if action.field.field_type not in self._TEXT_FIELD_TYPES:
+            if action.field.field_type not in self._SUPPORTED_FIELD_TYPES:
                 return BrowserExecutionResult(
                     status=BrowserExecutionStatus.BLOCKED,
                     completed_actions=completed_actions,
                     reason=(
                         "Execution plan contains a field type that "
-                        "is not supported for browser text mutation."
+                        "is not supported for browser mutation."
                     ),
                 )
 
@@ -155,10 +166,7 @@ class BrowserFormExecutor:
                     )
 
             try:
-                self._writer.write_text(
-                    field=action.field,
-                    value=action.value,
-                )
+                self._execute_action(action)
             except Exception as exc:
                 return BrowserExecutionResult(
                     status=BrowserExecutionStatus.FAILED,
@@ -177,6 +185,28 @@ class BrowserFormExecutor:
             reason=(
                 "All authorized browser field actions completed."
             ),
+        )
+
+    def _execute_action(
+        self,
+        action,
+    ) -> None:
+        if action.field.field_type in self._TEXT_FIELD_TYPES:
+            self._writer.write_text(
+                field=action.field,
+                value=action.value,
+            )
+            return
+
+        if action.field.field_type == FormFieldType.SELECT:
+            self._writer.select_option(
+                field=action.field,
+                value=action.value,
+            )
+            return
+
+        raise ValueError(
+            "Authorized action contains an unsupported field type."
         )
 
     def _target_error(

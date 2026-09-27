@@ -26,8 +26,8 @@ class ExecutionPlanStatus(str, Enum):
 @dataclass(frozen=True)
 class AuthorizedFieldAction:
     """
-    One field action explicitly authorized to cross the future
-    browser-mutation boundary.
+    One field action explicitly authorized to cross the browser-mutation
+    boundary.
 
     This object does not execute the action.
     """
@@ -63,12 +63,19 @@ class FormExecutionPlan:
 
 class ApplicationFormExecutor:
     """
-    Validate whether a FormAnswerPlan may cross the future browser
-    execution boundary.
+    Validate whether a FormAnswerPlan may cross the browser execution
+    boundary.
 
-    This milestone performs authorization only. It does not fill,
-    select, click, upload files, press keys, bypass verification,
-    or submit applications.
+    Supported actions remain narrowly scoped to:
+    - verified text-like values,
+    - deterministically resolved native SELECT values.
+
+    This class performs authorization only. It does not fill fields,
+    select options, click controls, upload files, press keys, bypass
+    verification, or submit applications.
+
+    External targets receive additional execution-time policy checks
+    before mutation.
 
     Unknown, unsupported, review, and manual cases fail closed.
     """
@@ -78,6 +85,7 @@ class ApplicationFormExecutor:
         FormFieldType.TEXTAREA,
         FormFieldType.EMAIL,
         FormFieldType.PHONE,
+        FormFieldType.SELECT,
     }
 
     def authorize(
@@ -139,7 +147,7 @@ class ApplicationFormExecutor:
             status=ExecutionPlanStatus.AUTHORIZED,
             reason=(
                 "All planned field actions are verified and supported "
-                "for future browser execution."
+                "for controlled browser execution."
             ),
         )
 

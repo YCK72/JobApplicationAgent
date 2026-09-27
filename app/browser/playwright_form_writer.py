@@ -17,16 +17,19 @@ class PlaywrightFieldWriterError(RuntimeError):
 
 class PlaywrightFieldWriter(BrowserFieldWriter):
     """
-    Narrow Playwright implementation for writing authorized text values.
+    Narrow Playwright implementation for authorized field mutation.
 
-    This writer exposes the current page URL for target verification and
-    supports only text-like field mutation.
+    This writer exposes the current page URL for target verification.
 
-    It exposes no navigation, clicking, selection, file-upload, keyboard,
+    It supports:
+    - text-like field filling,
+    - native SELECT mutation using an exact verified option label.
+
+    It exposes no navigation, arbitrary clicking, file upload, keyboard,
     verification-bypass, or submission operations.
     """
 
-    _SUPPORTED_FIELD_TYPES = {
+    _SUPPORTED_TEXT_FIELD_TYPES = {
         FormFieldType.TEXT,
         FormFieldType.TEXTAREA,
         FormFieldType.EMAIL,
@@ -51,20 +54,12 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
         field: FormField,
         value: str,
     ) -> None:
-        if field.field_type not in self._SUPPORTED_FIELD_TYPES:
+        if field.field_type not in self._SUPPORTED_TEXT_FIELD_TYPES:
             raise PlaywrightFieldWriterError(
                 "Field type is not supported for text writing."
             )
 
-        if not isinstance(value, str):
-            raise PlaywrightFieldWriterError(
-                "Field value must be a string."
-            )
-
-        if not field.field_id.strip():
-            raise PlaywrightFieldWriterError(
-                "Field identifier must not be empty."
-            )
+        self._validate_string_value(value)
 
         locator = self._resolve_locator(field)
 
@@ -75,11 +70,79 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
 
         locator.fill(value)
 
+    def select_option(
+        self,
+        field: FormField,
+        value: str,
+    ) -> None:
+        """
+        Select one exact inspected option on a native SELECT control.
+
+        The requested value must already be the exact option text preserved
+        by deterministic form analysis. No fuzzy matching, aliases,
+        abbreviations, or browser-side guessing are permitted.
+        """
+        if field.field_type != FormFieldType.SELECT:
+            raise PlaywrightFieldWriterError(
+                "Field type is not supported for option selection."
+            )
+
+        self._validate_string_value(value)
+
+        if not field.options:
+            raise PlaywrightFieldWriterError(
+                "SELECT field has no inspected options."
+            )
+
+        matches = [
+            option
+            for option in field.options
+            if option == value
+        ]
+
+        if len(matches) != 1:
+            raise PlaywrightFieldWriterError(
+                "SELECT value does not identify exactly one inspected option."
+            )
+
+        locator = self._resolve_locator(field)
+
+        if locator.count() != 1:
+            raise PlaywrightFieldWriterError(
+                "Field identifier did not resolve to exactly one control."
+            )
+
+        locator.select_option(label=value)
+
+    @staticmethod
+    def _validate_string_value(
+        value: str,
+    ) -> None:
+        if not isinstance(value, str):
+            raise PlaywrightFieldWriterError(
+                "Field value must be a string."
+            )
+
+        if not value.strip():
+            raise PlaywrightFieldWriterError(
+                "Field value must not be empty."
+            )
+
     def _resolve_locator(
         self,
         field: FormField,
     ):
+        if not isinstance(field.field_id, str):
+            raise PlaywrightFieldWriterError(
+                "Field identifier must be a string."
+            )
+
         field_id = field.field_id.strip()
+
+        if not field_id:
+            raise PlaywrightFieldWriterError(
+                "Field identifier must not be empty."
+            )
 
         by_id = self._page.locator(
             f'[id="{self._css_escape(field_id)}"]'

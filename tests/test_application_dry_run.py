@@ -250,7 +250,7 @@ def test_forged_sensitive_fill_is_blocked_by_external_policy():
     assert report.may_submit is False
 
 
-def test_unsupported_control_never_reports_would_fill():
+def test_external_select_never_reports_would_fill():
     field = make_field(
         "country",
         "Country",
@@ -272,10 +272,17 @@ def test_unsupported_control_never_reports_would_fill():
         plan,
     )
 
-    assert report.execution_status == ExecutionPlanStatus.BLOCKED
+    # Native SELECT is now supported by the generic execution layer.
+    # External SELECT mutation remains independently prohibited by the
+    # external field execution policy during Step 52A.
+    assert report.execution_status == ExecutionPlanStatus.AUTHORIZED
+    assert report.would_execute is True
+
     assert report.fields[0].status == (
         DryRunFieldStatus.BLOCKED_EXTERNAL_POLICY
     )
+    assert report.fields[0].value is None
+
     assert report.would_fill_count == 0
     assert report.may_submit is False
 

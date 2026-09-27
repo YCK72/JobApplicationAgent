@@ -248,3 +248,289 @@ def test_current_url_exposes_page_url_without_mutation():
     assert writer.current_url == "https://example.com/application"
 
     page.locator.assert_not_called()
+
+def test_native_select_uses_exact_inspected_option_label():
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "Select...",
+            "United States",
+            "Canada",
+        ],
+    )
+
+    writer.select_option(
+        field,
+        "United States",
+    )
+
+    page.locator.assert_called_once_with(
+        '[id="country"]'
+    )
+
+    locator.select_option.assert_called_once_with(
+        label="United States"
+    )
+
+    locator.fill.assert_not_called()
+
+
+def test_select_uses_name_when_id_does_not_exist():
+    page, id_locator, name_locator = (
+        make_page_with_locator_counts(
+            id_count=0,
+            name_count=1,
+        )
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="candidate[country]",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+            "Canada",
+        ],
+    )
+
+    writer.select_option(
+        field,
+        "United States",
+    )
+
+    assert page.locator.call_args_list[0].args == (
+        '[id="candidate[country]"]',
+    )
+    assert page.locator.call_args_list[1].args == (
+        '[name="candidate[country]"]',
+    )
+
+    id_locator.select_option.assert_not_called()
+    name_locator.select_option.assert_called_once_with(
+        label="United States"
+    )
+
+
+def test_select_rejects_non_select_field_without_dom_mutation():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="not supported",
+    ):
+        writer.select_option(
+            make_field(
+                field_type=FormFieldType.TEXT,
+            ),
+            "United States",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_select_rejects_missing_inspected_options():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="no inspected options",
+    ):
+        writer.select_option(
+            field,
+            "United States",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_select_rejects_value_not_in_inspected_options():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+            "Canada",
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected option",
+    ):
+        writer.select_option(
+            field,
+            "US",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_select_rejects_duplicate_exact_inspected_options():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+            "United States",
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected option",
+    ):
+        writer.select_option(
+            field,
+            "United States",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_select_rejects_empty_value():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="must not be empty",
+    ):
+        writer.select_option(
+            field,
+            "   ",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_select_missing_locator_is_rejected():
+    page, id_locator, name_locator = (
+        make_page_with_locator_counts(
+            id_count=0,
+            name_count=0,
+        )
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="could not be resolved",
+    ):
+        writer.select_option(
+            field,
+            "United States",
+        )
+
+    id_locator.select_option.assert_not_called()
+    name_locator.select_option.assert_not_called()
+
+
+def test_select_duplicate_id_is_rejected():
+    page = MagicMock()
+
+    id_locator = MagicMock()
+    id_locator.count.return_value = 2
+    page.locator.return_value = id_locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="multiple controls by id",
+    ):
+        writer.select_option(
+            field,
+            "United States",
+        )
+
+    assert page.locator.call_count == 1
+    id_locator.select_option.assert_not_called()
+
+
+def test_select_duplicate_name_is_rejected():
+    page, id_locator, name_locator = (
+        make_page_with_locator_counts(
+            id_count=0,
+            name_count=2,
+        )
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="multiple controls by name",
+    ):
+        writer.select_option(
+            field,
+            "United States",
+        )
+
+    id_locator.select_option.assert_not_called()
+    name_locator.select_option.assert_not_called()
