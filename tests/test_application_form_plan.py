@@ -396,3 +396,51 @@ def test_empty_form_never_authorizes_submission(
     # Form analysis/filling and application submission are
     # intentionally separate permissions.
     assert plan.may_submit is False
+
+def test_resolved_select_option_is_preserved_in_plan():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "country": "United States",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    analyzer = ApplicationFormAnalyzer(
+        answer_resolver=resolver
+    )
+
+    planner = ApplicationFormPlanner()
+
+    form = make_form(
+        FormField(
+            field_id="country",
+            label="Country",
+            field_type=FormFieldType.SELECT,
+            options=[
+                "Select...",
+                "United States",
+                "Canada",
+            ],
+        ),
+    )
+
+    plan = analyze_and_plan(
+        analyzer,
+        planner,
+        form,
+    )
+
+    assert (
+        plan.status
+        == FormPlanStatus.AUTO_FILL_ALLOWED
+    )
+
+    assert len(plan.fields) == 1
+    assert (
+        plan.fields[0].action
+        == FieldAction.FILL_VERIFIED
+    )
+    assert plan.fields[0].value == "United States"
+
+    # Planning a deterministic answer is not browser authorization.
+    assert plan.may_submit is False

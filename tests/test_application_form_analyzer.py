@@ -29,6 +29,7 @@ def resolver():
             "phone": "555-0100",
             "city": "Seattle",
             "state": "Washington",
+            "country": "United States",
         },
         question_policy=ApplicationQuestionPolicy(),
     )
@@ -309,3 +310,222 @@ def test_empty_form_is_auto_answerable(
     )
     assert result.can_auto_fill is True
     assert result.fields == ()
+
+
+def test_select_verified_answer_matches_exactly_one_option(
+    analyzer,
+):
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "Select...",
+            "United States",
+            "Canada",
+        ],
+    )
+
+    result = analyzer.analyze(
+        make_form(field)
+    )
+
+    assert (
+        result.status
+        == FormSafetyStatus.AUTO_ANSWERABLE
+    )
+    assert result.can_auto_fill is True
+
+    resolution = result.fields[0].resolution
+
+    assert resolution.status == AnswerStatus.RESOLVED
+    assert resolution.answer == "United States"
+
+
+def test_select_match_is_case_and_whitespace_insensitive(
+    analyzer,
+):
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "Select...",
+            "  united   states  ",
+            "Canada",
+        ],
+    )
+
+    result = analyzer.analyze(
+        make_form(field)
+    )
+
+    resolution = result.fields[0].resolution
+
+    assert resolution.status == AnswerStatus.RESOLVED
+
+    # Preserve the exact inspected option text rather than replacing
+    # it with the normalized comparison value.
+    assert resolution.answer == "  united   states  "
+
+
+def test_select_without_matching_option_requires_review(
+    analyzer,
+):
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "Select...",
+            "Canada",
+            "Mexico",
+        ],
+    )
+
+    result = analyzer.analyze(
+        make_form(field)
+    )
+
+    assert (
+        result.status
+        == FormSafetyStatus.NEEDS_REVIEW
+    )
+    assert result.can_auto_fill is False
+
+    resolution = result.fields[0].resolution
+
+    assert (
+        resolution.status
+        == AnswerStatus.NEEDS_REVIEW
+    )
+    assert resolution.answer is None
+
+
+def test_select_without_inspected_options_requires_review(
+    analyzer,
+):
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[],
+    )
+
+    result = analyzer.analyze(
+        make_form(field)
+    )
+
+    assert (
+        result.status
+        == FormSafetyStatus.NEEDS_REVIEW
+    )
+
+    resolution = result.fields[0].resolution
+
+    assert (
+        resolution.status
+        == AnswerStatus.NEEDS_REVIEW
+    )
+    assert resolution.answer is None
+
+
+def test_select_ambiguous_normalized_matches_require_review(
+    analyzer,
+):
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+            " united   states ",
+            "Canada",
+        ],
+    )
+
+    result = analyzer.analyze(
+        make_form(field)
+    )
+
+    assert (
+        result.status
+        == FormSafetyStatus.NEEDS_REVIEW
+    )
+
+    resolution = result.fields[0].resolution
+
+    assert (
+        resolution.status
+        == AnswerStatus.NEEDS_REVIEW
+    )
+    assert resolution.answer is None
+
+
+def test_select_does_not_use_alias_or_fuzzy_matching():
+    resolver = ApplicationAnswerResolver(
+        verified_answers={
+            "country": "US",
+        },
+        question_policy=ApplicationQuestionPolicy(),
+    )
+
+    analyzer = ApplicationFormAnalyzer(
+        answer_resolver=resolver
+    )
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "Select...",
+            "United States",
+            "Canada",
+        ],
+    )
+
+    result = analyzer.analyze(
+        make_form(field)
+    )
+
+    assert (
+        result.status
+        == FormSafetyStatus.NEEDS_REVIEW
+    )
+
+    resolution = result.fields[0].resolution
+
+    assert (
+        resolution.status
+        == AnswerStatus.NEEDS_REVIEW
+    )
+    assert resolution.answer is None
+
+
+def test_sensitive_select_never_reaches_option_resolution(
+    analyzer,
+):
+    field = FormField(
+        field_id="citizenship",
+        label="What is your citizenship status?",
+        field_type=FormFieldType.SELECT,
+        options=[
+            "United States",
+            "Canada",
+        ],
+    )
+
+    result = analyzer.analyze(
+        make_form(field)
+    )
+
+    assert (
+        result.status
+        == FormSafetyStatus.MANUAL_REQUIRED
+    )
+
+    resolution = result.fields[0].resolution
+
+    assert resolution.status == AnswerStatus.SENSITIVE
+    assert resolution.answer is None

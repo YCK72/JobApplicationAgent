@@ -11,6 +11,7 @@ from app.applications.answer_resolver import (
 from app.applications.form_models import (
     ApplicationForm,
     FormField,
+    FormFieldType,
 )
 
 
@@ -59,7 +60,7 @@ class FormAnalysisResult:
         Whether every inspected field has a verified,
         automatically usable answer.
 
-        This does not authorize submission.
+        This does not authorize browser mutation or submission.
         """
         return self.status == FormSafetyStatus.AUTO_ANSWERABLE
 
@@ -69,9 +70,13 @@ class ApplicationFormAnalyzer:
     Runs normalized application fields through the verified-answer
     safety system.
 
+    For SELECT controls, a resolved verified answer is considered
+    automatically usable only when it matches exactly one inspected
+    option after conservative text normalization.
+
     This class performs analysis only. It does not interact with a
-    browser, fill fields, click controls, upload files, or submit
-    applications.
+    browser, fill fields, select options, click controls, upload files,
+    or submit applications.
     """
 
     def __init__(
@@ -140,7 +145,107 @@ class ApplicationFormAnalyzer:
             field.label
         )
 
+        if (
+            field.field_type == FormFieldType.SELECT
+            and resolution.status == AnswerStatus.RESOLVED
+        ):
+            resolution = self._validate_select_resolution(
+                field=field,
+                resolution=resolution,
+            )
+
         return FieldAnalysis(
             field=field,
             resolution=resolution,
         )
+
+    @classmethod
+    def _validate_select_resolution(
+        cls,
+        *,
+        field: FormField,
+        resolution: AnswerResolution,
+    ) -> AnswerResolution:
+        """
+        Validate a resolved answer against inspected SELECT options.
+
+        Matching is intentionally conservative:
+        - surrounding whitespace is ignored,
+        - internal whitespace is collapsed,
+        - comparison is case-insensitive,
+        - otherwise the option text must match exactly.
+
+        No aliases, abbreviations, fuzzy matching, or semantic guessing
+        are permitted.
+
+        A successful match preserves the exact inspected option text.
+        This does not authorize selecting the option in a browser.
+        """
+        if resolution.answer is None:
+            return AnswerResolution(
+                status=AnswerStatus.NEEDS_REVIEW,
+                answer=None,
+                reason=(
+                    "SELECT field has no verified answer; "
+                    "human review is required."
+                ),
+            )
+
+        if not field.options:
+            return AnswerResolution(
+                status=AnswerStatus.NEEDS_REVIEW,
+                answer=None,
+                reason=(
+                    "SELECT field has no inspected options; "
+                    "deterministic option resolution is not possible."
+                ),
+            )
+
+        normalized_answer = cls._normalize_option_text(
+            resolution.answer
+        )
+
+        matches = [
+            option
+            for option in field.options
+            if cls._normalize_option_text(option)
+            == normalized_answer
+        ]
+
+        if len(matches) == 1:
+            return AnswerResolution(
+                status=AnswerStatus.RESOLVED,
+                answer=matches[0],
+                reason=(
+                    "Verified answer matched exactly one inspected "
+                    "SELECT option."
+                ),
+            )
+
+        if not matches:
+            return AnswerResolution(
+                status=AnswerStatus.NEEDS_REVIEW,
+                answer=None,
+                reason=(
+                    "Verified answer does not exactly match any "
+                    "inspected SELECT option; human review is required."
+                ),
+            )
+
+        return AnswerResolution(
+            status=AnswerStatus.NEEDS_REVIEW,
+            answer=None,
+            reason=(
+                "Verified answer matches multiple inspected SELECT "
+                "options after normalization; human review is required."
+            ),
+        )
+
+    @staticmethod
+    def _normalize_option_text(
+        value: str,
+    ) -> str:
+        """
+        Normalize SELECT text only for conservative equality checking.
+        """
+        return " ".join(value.split()).casefold()
