@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, PropertyMock, call
 
 from app.applications.browser_form_executor import (
     BrowserExecutionStatus,
@@ -20,6 +20,10 @@ from app.applications.form_models import (
 from app.browser.playwright_form_writer import (
     PlaywrightFieldWriter,
 )
+
+
+TARGET_URL = "https://example.com/application"
+OTHER_TARGET_URL = "https://example.com/other"
 
 
 def make_field(
@@ -45,15 +49,26 @@ def make_plan(
     )
 
 
-def make_target_authorization() -> ExecutionTargetAuthorization:
+def make_page(
+    current_url: str = TARGET_URL,
+):
+    page = MagicMock()
+    page.url = current_url
+    return page
+
+
+def make_target_authorization(
+    target_url: str = TARGET_URL,
+) -> ExecutionTargetAuthorization:
     return ExecutionTargetAuthorization(
         status=ExecutionTargetStatus.AUTHORIZED,
         reason="Test target authorization.",
+        target_url=target_url,
     )
 
 
 def test_authorized_plan_reaches_playwright_fill():
-    page = MagicMock()
+    page = make_page()
 
     locator = MagicMock()
     locator.count.return_value = 1
@@ -87,7 +102,7 @@ def test_authorized_plan_reaches_playwright_fill():
 
 
 def test_multiple_authorized_fields_reach_fill_in_order():
-    page = MagicMock()
+    page = make_page()
 
     first_locator = MagicMock()
     first_locator.count.return_value = 1
@@ -146,7 +161,7 @@ def test_multiple_authorized_fields_reach_fill_in_order():
 
 
 def test_blocked_plan_never_reaches_playwright():
-    page = MagicMock()
+    page = make_page()
 
     writer = PlaywrightFieldWriter(page)
     executor = BrowserFormExecutor(writer)
@@ -172,7 +187,7 @@ def test_blocked_plan_never_reaches_playwright():
 
 
 def test_unsupported_field_never_reaches_playwright():
-    page = MagicMock()
+    page = make_page()
 
     writer = PlaywrightFieldWriter(page)
     executor = BrowserFormExecutor(writer)
@@ -203,7 +218,7 @@ def test_unsupported_field_never_reaches_playwright():
 
 
 def test_writer_resolution_failure_stops_execution():
-    page = MagicMock()
+    page = make_page()
 
     missing_id = MagicMock()
     missing_id.count.return_value = 0
@@ -245,7 +260,7 @@ def test_writer_resolution_failure_stops_execution():
 
 
 def test_blocked_target_never_reaches_playwright():
-    page = MagicMock()
+    page = make_page()
 
     writer = PlaywrightFieldWriter(page)
     executor = BrowserFormExecutor(writer)
@@ -260,6 +275,7 @@ def test_blocked_target_never_reaches_playwright():
     target_authorization = ExecutionTargetAuthorization(
         status=ExecutionTargetStatus.BLOCKED,
         reason="External mutation was not authorized.",
+        target_url=None,
     )
 
     result = executor.execute(
@@ -272,3 +288,90 @@ def test_blocked_target_never_reaches_playwright():
     assert result.may_submit is False
 
     page.locator.assert_not_called()
+
+
+def test_authorization_for_url_a_cannot_mutate_url_b():
+    page = make_page(
+        current_url=OTHER_TARGET_URL
+    )
+
+    writer = PlaywrightFieldWriter(page)
+    executor = BrowserFormExecutor(writer)
+
+    plan = make_plan(
+        AuthorizedFieldAction(
+            field=make_field(),
+            value="Test",
+        )
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(
+            TARGET_URL
+        ),
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+    assert "does not match" in result.reason
+
+    page.locator.assert_not_called()
+
+
+def test_navigation_between_fields_blocks_second_playwright_fill():
+    page = MagicMock()
+
+    type(page).url = PropertyMock(
+        side_effect=[
+            TARGET_URL,
+            TARGET_URL,
+            OTHER_TARGET_URL,
+        ]
+    )
+
+    first_locator = MagicMock()
+    first_locator.count.return_value = 1
+
+    page.locator.return_value = first_locator
+
+    writer = PlaywrightFieldWriter(page)
+    executor = BrowserFormExecutor(writer)
+
+    first_name = make_field(
+        field_id="first_name",
+        label="First Name",
+    )
+
+    email = make_field(
+        field_id="email",
+        label="Email",
+        field_type=FormFieldType.EMAIL,
+    )
+
+    plan = make_plan(
+        AuthorizedFieldAction(
+            field=first_name,
+            value="Test",
+        ),
+        AuthorizedFieldAction(
+            field=email,
+            value="test@example.com",
+        ),
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+    assert "does not match" in result.reason
+
+    page.locator.assert_called_once_with(
+        '[id="first_name"]'
+    )
+    first_locator.fill.assert_called_once_with("Test")

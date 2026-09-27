@@ -31,13 +31,14 @@ def test_configured_local_fixture_is_authorized(
     guard: ExternalExecutionGuard,
     fixture_path: Path,
 ):
-    result = guard.authorize(
-        fixture_path.resolve().as_uri()
-    )
+    expected_url = fixture_path.resolve().as_uri()
+
+    result = guard.authorize(expected_url)
 
     assert result.status == ExecutionTargetStatus.AUTHORIZED
     assert result.may_mutate is True
     assert result.may_submit is False
+    assert result.target_url == expected_url
 
 
 def test_different_local_file_is_blocked(
@@ -56,6 +57,8 @@ def test_different_local_file_is_blocked(
 
     assert result.status == ExecutionTargetStatus.BLOCKED
     assert result.may_mutate is False
+    assert result.may_submit is False
+    assert result.target_url is None
 
 
 @pytest.mark.parametrize(
@@ -76,19 +79,23 @@ def test_external_target_is_blocked_by_default(
     assert result.status == ExecutionTargetStatus.BLOCKED
     assert result.may_mutate is False
     assert result.may_submit is False
+    assert result.target_url is None
 
 
 def test_external_target_requires_explicit_authorization(
     guard: ExternalExecutionGuard,
 ):
+    url = "https://job-boards.greenhouse.io/example/jobs/123"
+
     result = guard.authorize(
-        "https://job-boards.greenhouse.io/example/jobs/123",
+        url,
         allow_external=True,
     )
 
     assert result.status == ExecutionTargetStatus.AUTHORIZED
     assert result.may_mutate is True
     assert result.may_submit is False
+    assert result.target_url == url
 
 
 @pytest.mark.parametrize(
@@ -111,6 +118,7 @@ def test_invalid_or_unsupported_targets_fail_closed(
     assert result.status == ExecutionTargetStatus.BLOCKED
     assert result.may_mutate is False
     assert result.may_submit is False
+    assert result.target_url is None
 
 
 def test_non_string_target_fails_closed(
@@ -120,6 +128,7 @@ def test_non_string_target_fails_closed(
 
     assert result.status == ExecutionTargetStatus.BLOCKED
     assert result.may_mutate is False
+    assert result.target_url is None
 
 
 def test_authorization_never_allows_submission(
@@ -131,3 +140,84 @@ def test_authorization_never_allows_submission(
     )
 
     assert result.may_submit is False
+
+
+def test_external_url_normalization_is_bound_to_authorization(
+    guard: ExternalExecutionGuard,
+):
+    result = guard.authorize(
+        " HTTPS://EXAMPLE.COM:443/application ",
+        allow_external=True,
+    )
+
+    assert result.status == ExecutionTargetStatus.AUTHORIZED
+    assert result.target_url == "https://example.com/application"
+
+
+def test_default_https_port_normalizes_to_same_target():
+    first = ExternalExecutionGuard.normalize_target_url(
+        "https://example.com:443/application"
+    )
+    second = ExternalExecutionGuard.normalize_target_url(
+        "https://EXAMPLE.com/application"
+    )
+
+    assert first == second
+    assert first == "https://example.com/application"
+
+
+def test_default_http_port_normalizes_to_same_target():
+    first = ExternalExecutionGuard.normalize_target_url(
+        "http://example.com:80/application"
+    )
+    second = ExternalExecutionGuard.normalize_target_url(
+        "http://EXAMPLE.com/application"
+    )
+
+    assert first == second
+    assert first == "http://example.com/application"
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (
+            "https://example.com/jobs/123",
+            "https://example.com/jobs/456",
+        ),
+        (
+            "https://example.com/jobs/123?source=a",
+            "https://example.com/jobs/123?source=b",
+        ),
+        (
+            "https://example.com/jobs/123#one",
+            "https://example.com/jobs/123#two",
+        ),
+        (
+            "http://example.com/jobs/123",
+            "https://example.com/jobs/123",
+        ),
+    ],
+)
+def test_meaningfully_different_targets_remain_distinct(
+    first: str,
+    second: str,
+):
+    assert (
+        ExternalExecutionGuard.normalize_target_url(first)
+        != ExternalExecutionGuard.normalize_target_url(second)
+    )
+
+
+def test_url_credentials_are_rejected():
+    with pytest.raises(ValueError):
+        ExternalExecutionGuard.normalize_target_url(
+            "https://user:password@example.com/application"
+        )
+
+
+def test_invalid_port_is_rejected():
+    with pytest.raises(ValueError):
+        ExternalExecutionGuard.normalize_target_url(
+            "https://example.com:not-a-port/application"
+        )

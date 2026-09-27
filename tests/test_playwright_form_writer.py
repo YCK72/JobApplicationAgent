@@ -238,3 +238,13 @@ def test_selector_escapes_quotes_and_backslashes():
     )
 
     locator.fill.assert_called_once_with("Test")
+
+def test_current_url_exposes_page_url_without_mutation():
+    page = MagicMock()
+    page.url = "https://example.com/application"
+
+    writer = PlaywrightFieldWriter(page)
+
+    assert writer.current_url == "https://example.com/application"
+
+    page.locator.assert_not_called()

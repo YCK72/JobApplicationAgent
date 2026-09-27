@@ -5,6 +5,7 @@ from enum import Enum
 
 from app.applications.execution_guard import (
     ExecutionTargetAuthorization,
+    ExternalExecutionGuard,
 )
 from app.applications.form_executor import (
     FormExecutionPlan,
@@ -49,8 +50,10 @@ class BrowserFormExecutor:
     Execute an already-authorized FormExecutionPlan through a narrow
     BrowserFieldWriter boundary.
 
-    Both the execution plan and browser mutation target must be
-    independently authorized before any field reaches the writer.
+    The execution plan, mutation target authorization, and writer's actual
+    current browser target must all agree before mutation is permitted.
+
+    Target identity is revalidated before every individual field write.
 
     This class cannot navigate, click arbitrary controls, upload files,
     bypass human verification, or submit applications.
@@ -84,6 +87,18 @@ class BrowserFormExecutor:
                 "Target authorization unexpectedly allows submission."
             )
 
+        if target_authorization.target_url is None:
+            return self._blocked(
+                "Browser mutation authorization is not bound to a target."
+            )
+
+        target_error = self._target_error(
+            target_authorization
+        )
+
+        if target_error is not None:
+            return self._blocked(target_error)
+
         if not plan.may_execute:
             return self._blocked(
                 "Execution plan is not authorized."
@@ -105,6 +120,17 @@ class BrowserFormExecutor:
                         "Execution plan contains an unsupported "
                         "browser field type."
                     ),
+                )
+
+            target_error = self._target_error(
+                target_authorization
+            )
+
+            if target_error is not None:
+                return BrowserExecutionResult(
+                    status=BrowserExecutionStatus.BLOCKED,
+                    completed_actions=completed_actions,
+                    reason=target_error,
                 )
 
             try:
@@ -131,6 +157,36 @@ class BrowserFormExecutor:
                 "All authorized browser field actions completed."
             ),
         )
+
+    def _target_error(
+        self,
+        target_authorization: ExecutionTargetAuthorization,
+    ) -> str | None:
+        authorized_url = target_authorization.target_url
+
+        if authorized_url is None:
+            return (
+                "Browser mutation authorization is not bound "
+                "to a target."
+            )
+
+        try:
+            current_url = ExternalExecutionGuard.normalize_target_url(
+                self.writer.current_url
+            )
+        except (TypeError, ValueError, OSError):
+            return (
+                "Current browser target could not be safely "
+                "normalized."
+            )
+
+        if current_url != authorized_url:
+            return (
+                "Current browser target does not match the "
+                "authorized mutation target."
+            )
+
+        return None
 
     @staticmethod
     def _blocked(

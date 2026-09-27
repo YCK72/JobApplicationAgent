@@ -19,9 +19,11 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
     """
     Narrow Playwright implementation for writing authorized text values.
 
-    This writer supports only text-like fields and exposes no navigation,
-    clicking, selection, file-upload, keyboard, verification-bypass, or
-    submission operations.
+    This writer exposes the current page URL for target verification and
+    supports only text-like field mutation.
+
+    It exposes no navigation, clicking, selection, file-upload, keyboard,
+    verification-bypass, or submission operations.
     """
 
     _SUPPORTED_FIELD_TYPES = {
@@ -36,6 +38,13 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
         page: Page,
     ) -> None:
         self._page = page
+
+    @property
+    def current_url(self) -> str:
+        """
+        Return the current Playwright page URL without changing browser state.
+        """
+        return self._page.url
 
     def write_text(
         self,
