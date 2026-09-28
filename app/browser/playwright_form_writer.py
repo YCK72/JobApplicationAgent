@@ -6,6 +6,7 @@ from playwright.sync_api import Page
 
 from app.applications.form_models import (
     FormField,
+    FormFieldOption,
     FormFieldType,
 )
 from app.browser.form_writer import BrowserFieldWriter
@@ -140,18 +141,17 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
             value: str,
     ) -> None:
         """
-        Select one exact inspected option from a native RADIO group.
+        Select one exact inspected semantic option from a native RADIO group.
 
-        The requested value must exactly match one option preserved by
-        deterministic form inspection. No fuzzy matching, aliases,
-        abbreviations, or browser-side guessing are permitted.
+        value is the human-visible semantic option already resolved by
+        deterministic planning.
 
-        The RADIO group is resolved by its inspected field identifier.
-        The requested option is then resolved independently by the exact
-        group name and exact inspected value.
+        The corresponding native DOM value must have been independently
+        preserved during inspection in field.option_details. Execution fails
+        closed if that mapping is missing or ambiguous.
 
-        The matching browser control is revalidated immediately before
-        mutation and must still be an actual native HTML INPUT[type=radio].
+        No fuzzy matching, aliases, DOM-side inference, or browser-side
+        guessing are permitted.
         """
         if field.field_type != FormFieldType.RADIO:
             raise PlaywrightFieldWriterError(
@@ -176,6 +176,26 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
                 "RADIO value does not identify exactly one inspected option."
             )
 
+        native_matches = [
+            option
+            for option in field.option_details
+            if option.label == value
+        ]
+
+        if not native_matches:
+            raise PlaywrightFieldWriterError(
+                "RADIO option has no inspected native value mapping."
+            )
+
+        if len(native_matches) != 1:
+            raise PlaywrightFieldWriterError(
+                "RADIO option does not identify exactly one native value."
+            )
+
+        native_value = native_matches[0].value
+
+        self._validate_string_value(native_value)
+
         group_locator = self._resolve_radio_group(field)
 
         if group_locator.count() < 1:
@@ -188,16 +208,19 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
         option_locator = self._page.locator(
             (
                 f'[name="{self._css_escape(field_id)}"]'
-                f'[value="{self._css_escape(value)}"]'
+                f'[value="{self._css_escape(native_value)}"]'
             )
         )
 
         if option_locator.count() != 1:
             raise PlaywrightFieldWriterError(
-                "RADIO value did not resolve to exactly one browser control."
+                "RADIO native value did not resolve to exactly one "
+                "browser control."
             )
 
-        self._validate_native_radio_input(option_locator)
+        self._validate_native_radio_input(
+            option_locator
+        )
 
         option_locator.check()
 

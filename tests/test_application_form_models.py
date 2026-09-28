@@ -151,3 +151,58 @@ def test_empty_job_url_is_rejected():
             provider="Greenhouse",
             job_url="",
         )
+
+def test_form_field_supports_radio_option_details() -> None:
+    from app.applications.form_models import (
+        FormField,
+        FormFieldOption,
+        FormFieldType,
+    )
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "Remote",
+            "Hybrid",
+        ],
+        option_details=[
+            FormFieldOption(
+                label="Remote",
+                value="101",
+            ),
+            FormFieldOption(
+                label="Hybrid",
+                value="102",
+            ),
+        ],
+    )
+
+    assert field.options == [
+        "Remote",
+        "Hybrid",
+    ]
+
+    assert field.option_details == [
+        FormFieldOption(
+            label="Remote",
+            value="101",
+        ),
+        FormFieldOption(
+            label="Hybrid",
+            value="102",
+        ),
+    ]
+
+
+def test_form_field_option_preserves_distinct_label_and_native_value() -> None:
+    from app.applications.form_models import FormFieldOption
+
+    option = FormFieldOption(
+        label="Remote",
+        value="internal-option-101",
+    )
+
+    assert option.label == "Remote"
+    assert option.value == "internal-option-101"

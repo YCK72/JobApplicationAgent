@@ -18,12 +18,36 @@ class FormFieldType(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class FormFieldOption(BaseModel):
+    """
+    One inspected selectable option.
+
+    label is the human-visible semantic option used by deterministic
+    planning.
+
+    value is the exact provider/browser value observed during inspection.
+    It is execution metadata only and does not independently authorize
+    browser mutation or submission.
+    """
+
+    label: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+
 class FormField(BaseModel):
     """
     ATS-independent representation of one application field.
 
-    This model describes a field only. It does not authorize
-    filling, clicking, or submitting anything.
+    options preserves the human-visible semantic option labels used by
+    deterministic answer resolution and planning.
+
+    option_details may additionally preserve the exact provider/browser
+    value associated with each inspected option. This allows execution
+    layers to distinguish a semantic answer such as "Remote" from a DOM
+    value such as "internal-option-101".
+
+    This model describes a field only. It does not authorize filling,
+    clicking, selecting, or submitting anything.
     """
 
     field_id: str = Field(min_length=1)
@@ -34,6 +58,10 @@ class FormField(BaseModel):
     required: bool = False
 
     options: list[str] = Field(
+        default_factory=list
+    )
+
+    option_details: list[FormFieldOption] = Field(
         default_factory=list
     )
 

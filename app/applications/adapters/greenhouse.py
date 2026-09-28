@@ -10,6 +10,7 @@ from app.applications.adapters.base import (
 from app.applications.form_models import (
     ApplicationForm,
     FormField,
+    FormFieldOption,
     FormFieldType,
 )
 from app.browser import BrowserSession
@@ -74,20 +75,59 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
         return self.browser_session.page
 
     def _inspect_fields(
-        self,
-        page: Page,
+            self,
+            page: Page,
     ) -> list[FormField]:
         """
         Inspect supported form controls without interacting with them.
+
+        Native radio inputs that share one non-empty name are normalized
+        as one logical RADIO field. Radios without a usable name remain
+        independent controls because their grouping semantics cannot be
+        safely inferred.
         """
         controls = page.locator(
             "input, textarea, select"
         )
 
         fields: list[FormField] = []
+        processed_radio_names: set[str] = set()
 
         for index in range(controls.count()):
             control = controls.nth(index)
+
+            tag_name = control.evaluate(
+                "(element) => element.tagName.toLowerCase()"
+            )
+
+            input_type = (
+                    control.get_attribute("type") or ""
+            ).strip().lower()
+
+            if (
+                    tag_name == "input"
+                    and input_type == "radio"
+            ):
+                radio_name = (
+                        control.get_attribute("name") or ""
+                ).strip()
+
+                if radio_name:
+                    if radio_name in processed_radio_names:
+                        continue
+
+                    field = self._normalize_radio_group(
+                        controls=controls,
+                        radio_name=radio_name,
+                        page=page,
+                    )
+
+                    processed_radio_names.add(radio_name)
+
+                    if field is not None:
+                        fields.append(field)
+
+                    continue
 
             field = self._normalize_control(
                 control=control,
@@ -99,6 +139,112 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
                 fields.append(field)
 
         return fields
+
+    def _normalize_radio_group(
+            self,
+            *,
+            controls: Locator,
+            radio_name: str,
+            page: Page,
+    ) -> FormField | None:
+        """
+        Normalize native radio inputs sharing one name as one logical field.
+
+        Human-visible labels remain the semantic options used by planning.
+        Exact native values are preserved separately as execution metadata.
+
+        If one radio is already selected, current_value contains its
+        human-visible semantic label rather than its provider-specific value.
+        """
+        options: list[str] = []
+        option_details: list[FormFieldOption] = []
+        required = False
+        current_value: str | None = None
+        first_radio: Locator | None = None
+
+        for index in range(controls.count()):
+            control = controls.nth(index)
+
+            tag_name = control.evaluate(
+                "(element) => element.tagName.toLowerCase()"
+            )
+
+            input_type = (
+                    control.get_attribute("type") or ""
+            ).strip().lower()
+
+            if (
+                    tag_name != "input"
+                    or input_type != "radio"
+            ):
+                continue
+
+            control_name = (
+                    control.get_attribute("name") or ""
+            ).strip()
+
+            if control_name != radio_name:
+                continue
+
+            if first_radio is None:
+                first_radio = control
+
+            if self._is_required(control):
+                required = True
+
+            control_id = self._field_id(
+                control=control,
+                index=index,
+            )
+
+            option_label = self._field_label(
+                control=control,
+                field_id=control_id,
+                input_type=input_type,
+                page=page,
+            )
+
+            native_value = (
+                    control.get_attribute("value") or ""
+            ).strip()
+
+            if option_label:
+                if option_label not in options:
+                    options.append(option_label)
+
+                if native_value and not any(
+                        detail.label == option_label
+                        and detail.value == native_value
+                        for detail in option_details
+                ):
+                    option_details.append(
+                        FormFieldOption(
+                            label=option_label,
+                            value=native_value,
+                        )
+                    )
+
+                try:
+                    checked = control.is_checked()
+                except Exception:
+                    checked = False
+
+                if checked is True:
+                    current_value = option_label
+
+        if first_radio is None:
+            return None
+
+        return FormField(
+            field_id=radio_name,
+            label=self._humanize_identifier(radio_name),
+            field_type=FormFieldType.RADIO,
+            required=required,
+            options=options,
+            option_details=option_details,
+            current_value=current_value,
+            current_checked=None,
+        )
 
     def _normalize_control(
         self,

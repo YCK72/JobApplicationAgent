@@ -1005,3 +1005,592 @@ def test_cover_letter_file_input_uses_semantic_id_for_label():
     assert field.field_id == "cover_letter"
     assert field.field_type == FormFieldType.FILE
     assert field.label.lower() == "cover letter"
+
+def test_native_radio_group_is_normalized_as_one_logical_field() -> None:
+    remote = make_control(
+        attributes={
+            "id": "work_location_remote",
+            "name": "work_location",
+            "type": "radio",
+            "value": "remote",
+        },
+    )
+
+    hybrid = make_control(
+        attributes={
+            "id": "work_location_hybrid",
+            "name": "work_location",
+            "type": "radio",
+            "value": "hybrid",
+        },
+    )
+
+    onsite = make_control(
+        attributes={
+            "id": "work_location_onsite",
+            "name": "work_location",
+            "type": "radio",
+            "value": "onsite",
+        },
+    )
+
+    page = make_page(
+        [remote, hybrid, onsite],
+        labels={
+            "work_location_remote": "Remote",
+            "work_location_hybrid": "Hybrid",
+            "work_location_onsite": "On-site",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.field_id == "work_location"
+    assert field.field_type == FormFieldType.RADIO
+    assert field.options == [
+        "Remote",
+        "Hybrid",
+        "On-site",
+    ]
+
+
+def test_native_radio_group_deduplicates_visible_options() -> None:
+    first = make_control(
+        attributes={
+            "id": "location_first",
+            "name": "location",
+            "type": "radio",
+            "value": "first",
+        },
+    )
+
+    duplicate = make_control(
+        attributes={
+            "id": "location_duplicate",
+            "name": "location",
+            "type": "radio",
+            "value": "duplicate",
+        },
+    )
+
+    page = make_page(
+        [first, duplicate],
+        labels={
+            "location_first": "Remote",
+            "location_duplicate": "Remote",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert form.fields[0].options == ["Remote"]
+
+
+def test_distinct_native_radio_names_remain_distinct_fields() -> None:
+    remote_yes = make_control(
+        attributes={
+            "id": "remote_yes",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "yes",
+        },
+    )
+
+    remote_no = make_control(
+        attributes={
+            "id": "remote_no",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "no",
+        },
+    )
+
+    relocate_yes = make_control(
+        attributes={
+            "id": "relocate_yes",
+            "name": "relocation",
+            "type": "radio",
+            "value": "yes",
+        },
+    )
+
+    relocate_no = make_control(
+        attributes={
+            "id": "relocate_no",
+            "name": "relocation",
+            "type": "radio",
+            "value": "no",
+        },
+    )
+
+    page = make_page(
+        [
+            remote_yes,
+            remote_no,
+            relocate_yes,
+            relocate_no,
+        ],
+        labels={
+            "remote_yes": "Yes",
+            "remote_no": "No",
+            "relocate_yes": "Yes",
+            "relocate_no": "No",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 2
+
+    assert form.fields[0].field_id == "remote_preference"
+    assert form.fields[0].options == ["Yes", "No"]
+
+    assert form.fields[1].field_id == "relocation"
+    assert form.fields[1].options == ["Yes", "No"]
+
+def test_unnamed_native_radios_are_not_inferred_as_one_group() -> None:
+    first = make_control(
+        attributes={
+            "id": "option_one",
+            "type": "radio",
+            "value": "one",
+        },
+    )
+
+    second = make_control(
+        attributes={
+            "id": "option_two",
+            "type": "radio",
+            "value": "two",
+        },
+    )
+
+    page = make_page(
+        [first, second],
+        labels={
+            "option_one": "Option One",
+            "option_two": "Option Two",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 2
+    assert all(
+        field.field_type == FormFieldType.RADIO
+        for field in form.fields
+    )
+
+    assert form.fields[0].field_id == "option_one"
+    assert form.fields[1].field_id == "option_two"
+
+
+def test_native_radio_group_is_required_when_any_member_is_required() -> None:
+    yes = make_control(
+        attributes={
+            "id": "remote_yes",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "yes",
+        },
+    )
+
+    no = make_control(
+        attributes={
+            "id": "remote_no",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "no",
+            "required": "",
+        },
+    )
+
+    page = make_page(
+        [yes, no],
+        labels={
+            "remote_yes": "Yes",
+            "remote_no": "No",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.field_id == "remote_preference"
+    assert field.required is True
+    assert field.options == ["Yes", "No"]
+
+
+def test_radio_group_preserves_first_occurrence_field_order() -> None:
+    first_name = make_control(
+        attributes={
+            "id": "first_name",
+            "type": "text",
+        },
+    )
+
+    remote_yes = make_control(
+        attributes={
+            "id": "remote_yes",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "yes",
+        },
+    )
+
+    email = make_control(
+        attributes={
+            "id": "email",
+            "type": "email",
+        },
+    )
+
+    remote_no = make_control(
+        attributes={
+            "id": "remote_no",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "no",
+        },
+    )
+
+    page = make_page(
+        [
+            first_name,
+            remote_yes,
+            email,
+            remote_no,
+        ],
+        labels={
+            "first_name": "First Name",
+            "remote_yes": "Yes",
+            "email": "Email",
+            "remote_no": "No",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert [
+        field.field_id
+        for field in form.fields
+    ] == [
+        "first_name",
+        "remote_preference",
+        "email",
+    ]
+
+
+def test_radio_group_inspection_does_not_mutate_controls() -> None:
+    yes = make_control(
+        attributes={
+            "id": "remote_yes",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "yes",
+        },
+    )
+
+    no = make_control(
+        attributes={
+            "id": "remote_no",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "no",
+        },
+    )
+
+    page = make_page(
+        [yes, no],
+        labels={
+            "remote_yes": "Yes",
+            "remote_no": "No",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    adapter.inspect()
+
+    for control in (yes, no):
+        control.click.assert_not_called()
+        control.check.assert_not_called()
+        control.uncheck.assert_not_called()
+        control.fill.assert_not_called()
+        control.select_option.assert_not_called()
+
+def test_native_radio_group_preserves_label_to_native_value_mapping() -> None:
+    remote = make_control(
+        attributes={
+            "id": "work_location_remote",
+            "name": "work_location",
+            "type": "radio",
+            "value": "internal-101",
+        },
+    )
+
+    hybrid = make_control(
+        attributes={
+            "id": "work_location_hybrid",
+            "name": "work_location",
+            "type": "radio",
+            "value": "internal-102",
+        },
+    )
+
+    page = make_page(
+        [remote, hybrid],
+        labels={
+            "work_location_remote": "Remote",
+            "work_location_hybrid": "Hybrid",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.options == [
+        "Remote",
+        "Hybrid",
+    ]
+
+    assert [
+        (option.label, option.value)
+        for option in field.option_details
+    ] == [
+        ("Remote", "internal-101"),
+        ("Hybrid", "internal-102"),
+    ]
+
+def test_native_radio_group_preserves_selected_semantic_option() -> None:
+    remote = make_control(
+        attributes={
+            "id": "work_location_remote",
+            "name": "work_location",
+            "type": "radio",
+            "value": "internal-101",
+        },
+        checked=True,
+    )
+
+    hybrid = make_control(
+        attributes={
+            "id": "work_location_hybrid",
+            "name": "work_location",
+            "type": "radio",
+            "value": "internal-102",
+        },
+        checked=False,
+    )
+
+    page = make_page(
+        [remote, hybrid],
+        labels={
+            "work_location_remote": "Remote",
+            "work_location_hybrid": "Hybrid",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.current_value == "Remote"
+
+def test_native_radio_group_without_selection_has_no_current_value() -> None:
+    remote = make_control(
+        attributes={
+            "id": "work_location_remote",
+            "name": "work_location",
+            "type": "radio",
+            "value": "internal-101",
+        },
+        checked=False,
+    )
+
+    hybrid = make_control(
+        attributes={
+            "id": "work_location_hybrid",
+            "name": "work_location",
+            "type": "radio",
+            "value": "internal-102",
+        },
+        checked=False,
+    )
+
+    page = make_page(
+        [remote, hybrid],
+        labels={
+            "work_location_remote": "Remote",
+            "work_location_hybrid": "Hybrid",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert form.fields[0].current_value is None
+
+def test_native_radio_group_preserves_ambiguous_label_mappings() -> None:
+    first = make_control(
+        attributes={
+            "id": "location_101",
+            "name": "location",
+            "type": "radio",
+            "value": "101",
+        },
+    )
+
+    second = make_control(
+        attributes={
+            "id": "location_999",
+            "name": "location",
+            "type": "radio",
+            "value": "999",
+        },
+    )
+
+    page = make_page(
+        [first, second],
+        labels={
+            "location_101": "Remote",
+            "location_999": "Remote",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.options == ["Remote"]
+
+    assert [
+        (option.label, option.value)
+        for option in field.option_details
+    ] == [
+        ("Remote", "101"),
+        ("Remote", "999"),
+    ]

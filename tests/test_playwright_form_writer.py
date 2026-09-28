@@ -4,8 +4,10 @@ import pytest
 
 from app.applications.form_models import (
     FormField,
+    FormFieldOption,
     FormFieldType,
 )
+
 from app.browser.playwright_form_writer import (
     PlaywrightFieldWriter,
     PlaywrightFieldWriterError,
@@ -72,18 +74,27 @@ def make_radio_field(
     label: str = "Country",
     options: list[str] | None = None,
 ) -> FormField:
+    resolved_options = (
+        options
+        if options is not None
+        else [
+            "United States",
+            "Canada",
+        ]
+    )
+
     return FormField(
         field_id=field_id,
         label=label,
         field_type=FormFieldType.RADIO,
-        options=(
-            options
-            if options is not None
-            else [
-                "United States",
-                "Canada",
-            ]
-        ),
+        options=resolved_options,
+        option_details=[
+            FormFieldOption(
+                label=option,
+                value=option,
+            )
+            for option in resolved_options
+        ],
     )
 
 @pytest.mark.parametrize(
@@ -1579,3 +1590,293 @@ def test_checkbox_rejects_browser_state_inspection_failure():
     locator.check.assert_not_called()
     locator.uncheck.assert_not_called()
     locator.click.assert_not_called()
+
+def test_select_radio_option_uses_inspected_native_value_mapping() -> None:
+    page = MagicMock()
+    group_locator = MagicMock()
+    option_locator = MagicMock()
+
+    page.locator.side_effect = (
+        lambda selector: (
+            group_locator
+            if selector == '[name="work_location"]'
+            else option_locator
+        )
+    )
+
+    group_locator.count.return_value = 2
+    option_locator.count.return_value = 1
+    option_locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "radio",
+    }
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "Remote",
+            "Hybrid",
+        ],
+        option_details=[
+            FormFieldOption(
+                label="Remote",
+                value="internal-101",
+            ),
+            FormFieldOption(
+                label="Hybrid",
+                value="internal-102",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    writer.select_radio_option(
+        field,
+        "Remote",
+    )
+
+    page.locator.assert_any_call(
+        '[name="work_location"]'
+        '[value="internal-101"]'
+    )
+
+    option_locator.check.assert_called_once_with()
+
+def test_select_radio_option_blocks_without_native_value_mapping() -> None:
+    page = MagicMock()
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "Remote",
+            "Hybrid",
+        ],
+        option_details=[],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="native value",
+    ):
+        writer.select_radio_option(
+            field,
+            "Remote",
+        )
+
+    page.locator.assert_not_called()
+
+def test_select_radio_option_blocks_ambiguous_native_value_mapping() -> None:
+    page = MagicMock()
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "Remote",
+        ],
+        option_details=[
+            FormFieldOption(
+                label="Remote",
+                value="internal-101",
+            ),
+            FormFieldOption(
+                label="Remote",
+                value="internal-999",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one native value",
+    ):
+        writer.select_radio_option(
+            field,
+            "Remote",
+        )
+
+    page.locator.assert_not_called()
+
+def test_radio_rejects_duplicate_semantic_label_mappings() -> None:
+    page = MagicMock()
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=["Remote"],
+        option_details=[
+            FormFieldOption(
+                label="Remote",
+                value="internal-101",
+            ),
+            FormFieldOption(
+                label="Remote",
+                value="internal-102",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one native value",
+    ):
+        writer.select_radio_option(
+            field,
+            "Remote",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_radio_rejects_missing_mapping_for_requested_option() -> None:
+    page = MagicMock()
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "Remote",
+            "Hybrid",
+        ],
+        option_details=[
+            FormFieldOption(
+                label="Hybrid",
+                value="internal-102",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="no inspected native value mapping",
+    ):
+        writer.select_radio_option(
+            field,
+            "Remote",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_radio_rejects_semantic_value_not_in_inspected_options() -> None:
+    page = MagicMock()
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "Remote",
+            "Hybrid",
+        ],
+        option_details=[
+            FormFieldOption(
+                label="Remote",
+                value="internal-101",
+            ),
+            FormFieldOption(
+                label="Hybrid",
+                value="internal-102",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected option",
+    ):
+        writer.select_radio_option(
+            field,
+            "On-site",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_radio_rejects_stale_native_value_without_mutation() -> None:
+    page = MagicMock()
+
+    group_locator = MagicMock()
+    group_locator.count.return_value = 2
+
+    stale_option_locator = MagicMock()
+    stale_option_locator.count.return_value = 0
+
+    page.locator.side_effect = [
+        group_locator,
+        stale_option_locator,
+    ]
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=["Remote"],
+        option_details=[
+            FormFieldOption(
+                label="Remote",
+                value="internal-101",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one browser control",
+    ):
+        writer.select_radio_option(
+            field,
+            "Remote",
+        )
+
+    stale_option_locator.check.assert_not_called()
+
+
+def test_radio_uses_exact_case_sensitive_semantic_matching() -> None:
+    page = MagicMock()
+
+    field = FormField(
+        field_id="work_location",
+        label="Work location",
+        field_type=FormFieldType.RADIO,
+        options=["Remote"],
+        option_details=[
+            FormFieldOption(
+                label="Remote",
+                value="internal-101",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected option",
+    ):
+        writer.select_radio_option(
+            field,
+            "remote",
+        )
+
+    page.locator.assert_not_called()
