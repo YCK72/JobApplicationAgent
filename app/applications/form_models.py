@@ -39,6 +39,8 @@ class FormField(BaseModel):
 
     current_value: Optional[str] = None
 
+    current_checked: Optional[bool] = None
+
 
 class ApplicationForm(BaseModel):
     """

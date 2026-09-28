@@ -24,6 +24,35 @@ def test_create_text_field():
     assert field.current_value is None
 
 
+def test_current_checked_defaults_to_none():
+    field = FormField(
+        field_id="first_name",
+        label="First Name",
+        field_type=FormFieldType.TEXT,
+    )
+
+    assert field.current_checked is None
+
+
+def test_checkbox_preserves_explicit_checked_state():
+    unchecked = FormField(
+        field_id="remote",
+        label="Remote",
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=False,
+    )
+
+    checked = FormField(
+        field_id="newsletter",
+        label="Newsletter",
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=True,
+    )
+
+    assert unchecked.current_checked is False
+    assert checked.current_checked is True
+
+
 def test_select_field_preserves_options():
     field = FormField(
         field_id="state",

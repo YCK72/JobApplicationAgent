@@ -166,6 +166,11 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
             field_type=field_type,
         )
 
+        current_checked = self._current_checked(
+            control=control,
+            field_type=field_type,
+        )
+
         return FormField(
             field_id=field_id,
             label=label,
@@ -173,6 +178,7 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
             required=required,
             options=options,
             current_value=current_value,
+            current_checked=current_checked,
         )
 
     @staticmethod
@@ -486,6 +492,27 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
             return None
 
         return value
+
+    @staticmethod
+    def _current_checked(
+            *,
+            control: Locator,
+            field_type: FormFieldType,
+    ) -> bool | None:
+        """
+        Read the observed checked state of a native CHECKBOX control.
+
+        Checked state is represented separately from current_value because an
+        HTML checkbox's value attribute does not indicate whether the control
+        is currently checked.
+
+        This method only inspects browser state. It does not mutate the control
+        or authorize checkbox execution.
+        """
+        if field_type != FormFieldType.CHECKBOX:
+            return None
+
+        return control.is_checked()
 
     @staticmethod
     def _clean_text(value: str) -> str:

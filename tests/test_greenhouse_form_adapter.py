@@ -14,6 +14,7 @@ def make_control(
     attributes: dict[str, str | None] | None = None,
     value: str = "",
     options: list[str] | None = None,
+    checked: bool = False,
 ) -> MagicMock:
     control = MagicMock()
 
@@ -26,6 +27,7 @@ def make_control(
     )
 
     control.input_value.return_value = value
+    control.is_checked.return_value = checked
 
     option_locator = MagicMock()
 
@@ -583,6 +585,85 @@ def test_field_id_falls_back_to_name_then_generated_id() -> None:
 
     assert form.fields[0].field_id == "candidate_name"
     assert form.fields[1].field_id == "greenhouse-field-1"
+
+
+def test_unchecked_checkbox_state_is_inspected_without_mutation() -> None:
+    control = make_control(
+        attributes={
+            "id": "remote",
+            "type": "checkbox",
+        },
+        checked=False,
+    )
+
+    page = make_page([control])
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url="https://boards.greenhouse.io/example/jobs/123",
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert form.fields[0].field_type == FormFieldType.CHECKBOX
+    assert form.fields[0].current_checked is False
+
+    control.is_checked.assert_called_once_with()
+
+
+def test_checked_checkbox_state_is_inspected_without_mutation() -> None:
+    control = make_control(
+        attributes={
+            "id": "remote",
+            "type": "checkbox",
+        },
+        checked=True,
+    )
+
+    page = make_page([control])
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url="https://boards.greenhouse.io/example/jobs/123",
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert form.fields[0].field_type == FormFieldType.CHECKBOX
+    assert form.fields[0].current_checked is True
+
+    control.is_checked.assert_called_once_with()
+
+
+def test_non_checkbox_does_not_read_checked_state() -> None:
+    control = make_control(
+        attributes={
+            "id": "first_name",
+            "type": "text",
+        },
+        value="Existing Value",
+    )
+
+    page = make_page([control])
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url="https://boards.greenhouse.io/example/jobs/123",
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert form.fields[0].field_type == FormFieldType.TEXT
+    assert form.fields[0].current_checked is None
+    assert form.fields[0].current_value == "Existing Value"
+
+    control.is_checked.assert_not_called()
 
 
 def test_current_value_is_read_without_modifying_control() -> None:
