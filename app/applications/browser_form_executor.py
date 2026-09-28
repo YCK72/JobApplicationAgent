@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 from app.applications.execution_guard import (
     ExecutionTargetAuthorization,
@@ -47,6 +48,10 @@ class BrowserFormExecutor:
     - verified text-like mutation,
     - deterministic native SELECT mutation,
     - controlled native FILE attachment.
+
+    FILE mutation requires an independently authorized resume path.
+    The requested FILE path must resolve to the exact same path
+    before browser mutation is allowed.
 
     External SELECT mutation remains prohibited unless the independent
     external field policy explicitly authorizes it.
@@ -146,6 +151,21 @@ class BrowserFormExecutor:
                     ),
                 )
 
+            if action.field.field_type == FormFieldType.FILE:
+                file_error = self._file_authorization_error(
+                    action_value=action.value,
+                    authorized_resume_path=(
+                        plan.authorized_resume_path
+                    ),
+                )
+
+                if file_error is not None:
+                    return BrowserExecutionResult(
+                        status=BrowserExecutionStatus.BLOCKED,
+                        completed_actions=completed_actions,
+                        reason=file_error,
+                    )
+
             if self._is_external_target(
                 target_authorization.target_url
             ):
@@ -219,6 +239,54 @@ class BrowserFormExecutor:
 
         raise ValueError(
             "Authorized action contains an unsupported field type."
+        )
+
+    @staticmethod
+    def _file_authorization_error(
+        *,
+        action_value: str,
+        authorized_resume_path: str | None,
+    ) -> str | None:
+        if authorized_resume_path is None:
+            return (
+                "FILE action does not have an independently "
+                "authorized resume path."
+            )
+
+        try:
+            requested_path = BrowserFormExecutor._normalize_file_path(
+                action_value
+            )
+            permitted_path = BrowserFormExecutor._normalize_file_path(
+                authorized_resume_path
+            )
+        except (TypeError, ValueError, OSError):
+            return (
+                "FILE action path could not be safely normalized."
+            )
+
+        if requested_path != permitted_path:
+            return (
+                "FILE action does not match the independently "
+                "authorized resume path."
+            )
+
+        return None
+
+    @staticmethod
+    def _normalize_file_path(
+        value: str,
+    ) -> str:
+        if not isinstance(value, str):
+            raise TypeError("FILE path must be a string.")
+
+        cleaned = value.strip()
+
+        if not cleaned:
+            raise ValueError("FILE path must not be empty.")
+
+        return str(
+            Path(cleaned).expanduser().resolve(strict=False)
         )
 
     def _target_error(

@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock, PropertyMock, call
-from app.browser.playwright_form_writer import PlaywrightFieldWriter
+
 from app.applications.browser_form_executor import (
     BrowserExecutionStatus,
     BrowserFormExecutor,
@@ -41,11 +41,13 @@ def make_field(
 def make_plan(
     *actions: AuthorizedFieldAction,
     status: ExecutionPlanStatus = ExecutionPlanStatus.AUTHORIZED,
+    authorized_resume_path: str | None = None,
 ) -> FormExecutionPlan:
     return FormExecutionPlan(
         actions=tuple(actions),
         status=status,
         reason="Test execution plan.",
+        authorized_resume_path=authorized_resume_path,
     )
 
 
@@ -98,6 +100,7 @@ def test_authorized_plan_reaches_playwright_fill():
     page.locator.assert_called_once_with(
         '[id="first_name"]'
     )
+
     locator.fill.assert_called_once_with("Test")
 
 
@@ -374,11 +377,13 @@ def test_navigation_between_fields_blocks_second_playwright_fill():
     page.locator.assert_called_once_with(
         '[id="first_name"]'
     )
+
     first_locator.fill.assert_called_once_with("Test")
+
 
 def test_external_sensitive_field_never_reaches_playwright_fill():
     page = MagicMock()
-    page.url = "https://example.com/application"
+    page.url = TARGET_URL
 
     writer = PlaywrightFieldWriter(page)
     executor = BrowserFormExecutor(writer)
@@ -398,15 +403,9 @@ def test_external_sensitive_field_never_reaches_playwright_fill():
         reason="Forged sensitive execution plan.",
     )
 
-    target_authorization = ExecutionTargetAuthorization(
-        status=ExecutionTargetStatus.AUTHORIZED,
-        reason="Explicit test authorization.",
-        target_url="https://example.com/application",
-    )
-
     result = executor.execute(
         plan,
-        target_authorization=target_authorization,
+        target_authorization=make_target_authorization(),
     )
 
     assert result.status == BrowserExecutionStatus.BLOCKED
@@ -418,7 +417,7 @@ def test_external_sensitive_field_never_reaches_playwright_fill():
 
 def test_external_review_field_never_reaches_playwright_fill():
     page = MagicMock()
-    page.url = "https://example.com/application"
+    page.url = TARGET_URL
 
     writer = PlaywrightFieldWriter(page)
     executor = BrowserFormExecutor(writer)
@@ -438,26 +437,21 @@ def test_external_review_field_never_reaches_playwright_fill():
         reason="Forged review execution plan.",
     )
 
-    target_authorization = ExecutionTargetAuthorization(
-        status=ExecutionTargetStatus.AUTHORIZED,
-        reason="Explicit test authorization.",
-        target_url="https://example.com/application",
-    )
-
     result = executor.execute(
         plan,
-        target_authorization=target_authorization,
+        target_authorization=make_target_authorization(),
     )
 
     assert result.status == BrowserExecutionStatus.BLOCKED
     assert result.completed_actions == 0
+    assert result.may_submit is False
 
     page.locator.assert_not_called()
 
 
 def test_external_safe_profile_field_reaches_playwright_fill():
     page = MagicMock()
-    page.url = "https://example.com/application"
+    page.url = TARGET_URL
 
     locator = MagicMock()
     locator.count.return_value = 1
@@ -481,15 +475,9 @@ def test_external_safe_profile_field_reaches_playwright_fill():
         reason="Verified safe profile field.",
     )
 
-    target_authorization = ExecutionTargetAuthorization(
-        status=ExecutionTargetStatus.AUTHORIZED,
-        reason="Explicit test authorization.",
-        target_url="https://example.com/application",
-    )
-
     result = executor.execute(
         plan,
-        target_authorization=target_authorization,
+        target_authorization=make_target_authorization(),
     )
 
     assert result.status == BrowserExecutionStatus.COMPLETED
@@ -499,6 +487,7 @@ def test_external_safe_profile_field_reaches_playwright_fill():
     locator.fill.assert_called_once_with(
         "Verified Name"
     )
+
 
 def test_external_resume_file_reaches_playwright_upload(
     tmp_path,
@@ -530,7 +519,8 @@ def test_external_resume_file_reaches_playwright_upload(
         AuthorizedFieldAction(
             field=field,
             value=str(resume_path),
-        )
+        ),
+        authorized_resume_path=str(resume_path.resolve()),
     )
 
     result = executor.execute(
@@ -572,7 +562,8 @@ def test_external_cover_letter_file_never_reaches_playwright_upload(
         AuthorizedFieldAction(
             field=field,
             value=str(cover_letter_path),
-        )
+        ),
+        authorized_resume_path=str(cover_letter_path.resolve()),
     )
 
     result = executor.execute(

@@ -1,5 +1,5 @@
+from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, call
-
 import pytest
 from app.applications.execution_guard import ExternalExecutionGuard
 
@@ -52,11 +52,13 @@ def make_action(
 def make_plan(
     *actions: AuthorizedFieldAction,
     status: ExecutionPlanStatus = ExecutionPlanStatus.AUTHORIZED,
+    authorized_resume_path: str | None = None,
 ) -> FormExecutionPlan:
     return FormExecutionPlan(
         actions=tuple(actions),
         status=status,
         reason="Test execution plan.",
+        authorized_resume_path=authorized_resume_path,
     )
 
 
@@ -211,11 +213,16 @@ def test_external_resume_file_reaches_writer():
         FormFieldType.FILE,
     )
 
+    resume_path = "resume.pdf"
+
     plan = make_plan(
         make_action(
             field=field,
-            value="resume.pdf",
-        )
+            value=resume_path,
+        ),
+        authorized_resume_path=str(
+            Path(resume_path).resolve()
+        ),
     )
 
     result = execute(executor, plan)
@@ -226,7 +233,7 @@ def test_external_resume_file_reaches_writer():
 
     writer.upload_file.assert_called_once_with(
         field=field,
-        file_path="resume.pdf",
+        file_path=resume_path,
     )
 
 
@@ -948,6 +955,7 @@ def test_local_fixture_file_reaches_writer(
         actions=(action,),
         status=ExecutionPlanStatus.AUTHORIZED,
         reason="Controlled local FILE fixture.",
+        authorized_resume_path=str(resume_path.resolve()),
     )
 
     guard = ExternalExecutionGuard(
@@ -992,6 +1000,104 @@ def test_external_non_resume_file_remains_blocked():
     )
 
     plan = make_plan(action)
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.upload_file.assert_not_called()
+
+def test_file_action_matching_plan_resume_authorization_reaches_writer():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        "resume",
+        "Resume",
+        FormFieldType.FILE,
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="data/resumes/sde_resume.pdf",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Test authorized plan.",
+        authorized_resume_path=str(
+            Path("data/resumes/sde_resume.pdf").resolve()
+        ),
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    writer.upload_file.assert_called_once_with(
+        field=field,
+        file_path="data/resumes/sde_resume.pdf",
+    )
+
+
+def test_file_action_mismatching_plan_resume_authorization_is_blocked():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        "resume",
+        "Resume",
+        FormFieldType.FILE,
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="data/resumes/other_resume.pdf",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Test authorized plan.",
+        authorized_resume_path=str(
+            Path("data/resumes/sde_resume.pdf").resolve()
+        ),
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.upload_file.assert_not_called()
+
+
+def test_file_action_without_plan_resume_authorization_is_blocked():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        "resume",
+        "Resume",
+        FormFieldType.FILE,
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="data/resumes/sde_resume.pdf",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Test authorized plan.",
+    )
 
     result = execute(executor, plan)
 

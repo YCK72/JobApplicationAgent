@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 from app.applications.form_models import (
     FormField,
@@ -41,6 +42,10 @@ class FormExecutionPlan:
     """
     Validated execution authorization derived from a FormAnswerPlan.
 
+    authorized_resume_path records the exact normalized resume path that
+    FILE execution is permitted to use. It remains None when the plan
+    contains no authorized resume upload.
+
     This object does not interact with a browser and never authorizes
     application submission.
     """
@@ -48,6 +53,7 @@ class FormExecutionPlan:
     actions: tuple[AuthorizedFieldAction, ...]
     status: ExecutionPlanStatus
     reason: str
+    authorized_resume_path: str | None = None
 
     @property
     def may_execute(self) -> bool:
@@ -69,7 +75,10 @@ class ApplicationFormExecutor:
     Supported actions remain narrowly scoped to:
     - verified text-like values,
     - deterministically resolved native SELECT values,
-    - previously selected FILE paths for controlled execution.
+    - explicitly authorized resume FILE paths.
+
+    FILE actions require an independently supplied resume path and must
+    resolve to that exact path before execution authorization is granted.
 
     This class performs authorization only. It does not fill fields,
     select options, attach files, click controls, press keys, bypass
@@ -94,6 +103,8 @@ class ApplicationFormExecutor:
     def authorize(
         self,
         plan: FormAnswerPlan,
+        *,
+        authorized_resume_path: str | None = None,
     ) -> FormExecutionPlan:
         if plan.status != FormPlanStatus.AUTO_FILL_ALLOWED:
             return self._blocked(
@@ -111,6 +122,7 @@ class ApplicationFormExecutor:
             )
 
         actions: list[AuthorizedFieldAction] = []
+        normalized_resume_path: str | None = None
 
         for field_plan in plan.fields:
             if field_plan.action != FieldAction.FILL_VERIFIED:
@@ -138,6 +150,33 @@ class ApplicationFormExecutor:
                     "supported for browser execution."
                 )
 
+            if field_plan.field.field_type == FormFieldType.FILE:
+                if authorized_resume_path is None:
+                    return self._blocked(
+                        "FILE action does not have an independently "
+                        "authorized resume path."
+                    )
+
+                try:
+                    requested_path = self._normalize_path(
+                        field_plan.value
+                    )
+                    permitted_path = self._normalize_path(
+                        authorized_resume_path
+                    )
+                except (TypeError, ValueError, OSError):
+                    return self._blocked(
+                        "Resume path could not be safely normalized."
+                    )
+
+                if requested_path != permitted_path:
+                    return self._blocked(
+                        "FILE action does not match the independently "
+                        "authorized resume path."
+                    )
+
+                normalized_resume_path = permitted_path
+
             actions.append(
                 AuthorizedFieldAction(
                     field=field_plan.field,
@@ -152,6 +191,23 @@ class ApplicationFormExecutor:
                 "All planned field actions are verified and supported "
                 "for controlled browser execution."
             ),
+            authorized_resume_path=normalized_resume_path,
+        )
+
+    @staticmethod
+    def _normalize_path(
+        value: str,
+    ) -> str:
+        if not isinstance(value, str):
+            raise TypeError("Resume path must be a string.")
+
+        cleaned = value.strip()
+
+        if not cleaned:
+            raise ValueError("Resume path must not be empty.")
+
+        return str(
+            Path(cleaned).expanduser().resolve(strict=False)
         )
 
     @staticmethod
@@ -162,4 +218,5 @@ class ApplicationFormExecutor:
             actions=(),
             status=ExecutionPlanStatus.BLOCKED,
             reason=reason,
+            authorized_resume_path=None,
         )

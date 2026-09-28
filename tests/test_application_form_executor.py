@@ -1,3 +1,4 @@
+from pathlib import Path
 from app.applications.form_executor import (
     ApplicationFormExecutor,
     ExecutionPlanStatus,
@@ -220,7 +221,10 @@ def test_file_field_is_authorized_for_controlled_execution():
         )
     )
 
-    result = executor.authorize(plan)
+    result = executor.authorize(
+        plan,
+        authorized_resume_path="resume.pdf",
+    )
 
     assert result.status == ExecutionPlanStatus.AUTHORIZED
     assert result.may_execute is True
@@ -229,6 +233,7 @@ def test_file_field_is_authorized_for_controlled_execution():
 
     assert result.actions[0].field == field
     assert result.actions[0].value == "resume.pdf"
+    assert result.authorized_resume_path is not None
 
 def test_empty_auto_fill_plan_is_authorized_but_cannot_submit():
     executor = ApplicationFormExecutor()
@@ -240,4 +245,82 @@ def test_empty_auto_fill_plan_is_authorized_but_cannot_submit():
     assert result.status == ExecutionPlanStatus.AUTHORIZED
     assert result.may_execute is True
     assert result.actions == ()
+    assert result.may_submit is False
+
+def test_file_action_carries_explicit_resume_authorization():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="resume",
+        label="Resume",
+        field_type=FormFieldType.FILE,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value="data/resumes/sde_resume.pdf",
+        )
+    )
+
+    result = executor.authorize(
+        plan,
+        authorized_resume_path="data/resumes/sde_resume.pdf",
+    )
+
+    assert result.status == ExecutionPlanStatus.AUTHORIZED
+    assert result.authorized_resume_path == str(
+        Path("data/resumes/sde_resume.pdf").resolve()
+    )
+    assert result.may_submit is False
+
+
+def test_file_action_without_resume_authorization_is_blocked():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="resume",
+        label="Resume",
+        field_type=FormFieldType.FILE,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value="data/resumes/sde_resume.pdf",
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.BLOCKED
+    assert result.actions == ()
+    assert result.authorized_resume_path is None
+    assert result.may_submit is False
+
+
+def test_file_action_different_from_authorized_resume_is_blocked():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="resume",
+        label="Resume",
+        field_type=FormFieldType.FILE,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value="data/resumes/other_resume.pdf",
+        )
+    )
+
+    result = executor.authorize(
+        plan,
+        authorized_resume_path="data/resumes/sde_resume.pdf",
+    )
+
+    assert result.status == ExecutionPlanStatus.BLOCKED
+    assert result.actions == ()
+    assert result.authorized_resume_path is None
     assert result.may_submit is False
