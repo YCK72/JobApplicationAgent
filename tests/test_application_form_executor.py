@@ -33,12 +33,14 @@ def make_field_plan(
     field: FormField | None = None,
     action: FieldAction = FieldAction.FILL_VERIFIED,
     value: str | None = "Test",
+    desired_checked: bool | None = None,
 ) -> FieldPlan:
     return FieldPlan(
         field=field or make_field(),
         action=action,
         value=value,
         reason="Test field plan.",
+        desired_checked=desired_checked,
     )
 
 
@@ -356,4 +358,240 @@ def test_file_action_different_from_authorized_resume_is_blocked():
     assert result.status == ExecutionPlanStatus.BLOCKED
     assert result.actions == ()
     assert result.authorized_resume_path is None
+    assert result.may_submit is False
+
+def test_safe_checkbox_with_explicit_true_intent_is_authorized():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="use_preferred_name",
+        label=(
+            "Use my verified preferred name on this application."
+        ),
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=False,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value=None,
+            desired_checked=True,
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.AUTHORIZED
+    assert result.may_execute is True
+    assert result.may_submit is False
+
+    assert len(result.actions) == 1
+    assert result.actions[0].field == field
+    assert result.actions[0].value is None
+    assert result.actions[0].desired_checked is True
+
+
+def test_safe_checkbox_with_explicit_false_intent_is_authorized():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="use_phone",
+        label=(
+            "Use my verified phone number for application contact."
+        ),
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=True,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value=None,
+            desired_checked=False,
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.AUTHORIZED
+    assert result.may_execute is True
+    assert result.may_submit is False
+
+    assert len(result.actions) == 1
+    assert result.actions[0].field == field
+    assert result.actions[0].value is None
+    assert result.actions[0].desired_checked is False
+
+
+def test_review_checkbox_semantics_are_blocked():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="unknown_checkbox",
+        label="Include this information with my application.",
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=False,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value=None,
+            desired_checked=True,
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.BLOCKED
+    assert result.may_execute is False
+    assert result.actions == ()
+    assert result.may_submit is False
+
+
+def test_blocked_checkbox_semantics_are_blocked():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="terms",
+        label="I agree to the terms and conditions.",
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=False,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value=None,
+            desired_checked=True,
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.BLOCKED
+    assert result.may_execute is False
+    assert result.actions == ()
+    assert result.may_submit is False
+
+
+def test_sensitive_checkbox_semantics_are_blocked():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="work_authorization",
+        label=(
+            "I am authorized to work in the United States."
+        ),
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=False,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value=None,
+            desired_checked=True,
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.BLOCKED
+    assert result.may_execute is False
+    assert result.actions == ()
+    assert result.may_submit is False
+
+def test_authorized_string_action_defaults_to_no_checkbox_intent():
+    executor = ApplicationFormExecutor()
+
+    result = executor.authorize(
+        make_plan(
+            make_field_plan(
+                value="Test",
+            )
+        )
+    )
+
+    assert result.status == ExecutionPlanStatus.AUTHORIZED
+    assert len(result.actions) == 1
+    assert result.actions[0].value == "Test"
+    assert result.actions[0].desired_checked is None
+
+
+def test_non_checkbox_field_with_checkbox_intent_is_blocked():
+    executor = ApplicationFormExecutor()
+
+    plan = make_plan(
+        make_field_plan(
+            field=make_field(
+                "first_name",
+                "First Name",
+                FormFieldType.TEXT,
+            ),
+            value="Test",
+            desired_checked=True,
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.BLOCKED
+    assert result.may_execute is False
+    assert result.actions == ()
+    assert result.may_submit is False
+
+
+def test_checkbox_with_string_value_and_boolean_intent_is_blocked():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="ordinary_checkbox",
+        label="Ordinary Checkbox",
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=False,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value="true",
+            desired_checked=True,
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.BLOCKED
+    assert result.may_execute is False
+    assert result.actions == ()
+    assert result.may_submit is False
+
+
+def test_safe_checkbox_without_explicit_boolean_intent_is_blocked():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="use_preferred_name",
+        label=(
+            "Use my verified preferred name on this application."
+        ),
+        field_type=FormFieldType.CHECKBOX,
+        current_checked=False,
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value=None,
+            desired_checked=None,
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.BLOCKED
+    assert result.may_execute is False
+    assert result.actions == ()
     assert result.may_submit is False

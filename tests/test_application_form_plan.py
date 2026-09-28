@@ -14,6 +14,7 @@ from app.applications.form_models import (
 from app.applications.form_plan import (
     ApplicationFormPlanner,
     FieldAction,
+    FieldPlan,
     FormPlanStatus,
 )
 from app.applications.question_policy import (
@@ -444,3 +445,93 @@ def test_resolved_select_option_is_preserved_in_plan():
 
     # Planning a deterministic answer is not browser authorization.
     assert plan.may_submit is False
+
+def test_field_plan_defaults_to_no_checkbox_intent():
+    field = make_field(
+        "first_name",
+        "First Name",
+    )
+
+    field_plan = FieldPlan(
+        field=field,
+        action=FieldAction.FILL_VERIFIED,
+        value="Test",
+        reason="Verified ordinary profile field.",
+    )
+
+    assert field_plan.value == "Test"
+    assert field_plan.desired_checked is None
+    assert field_plan.may_fill is True
+
+
+def test_field_plan_can_preserve_explicit_checked_intent():
+    field = make_field(
+        "ordinary_checkbox",
+        "Ordinary Checkbox",
+        FormFieldType.CHECKBOX,
+    )
+
+    field_plan = FieldPlan(
+        field=field,
+        action=FieldAction.FILL_VERIFIED,
+        value=None,
+        reason="Explicit test checkbox intent.",
+        desired_checked=True,
+    )
+
+    assert field_plan.value is None
+    assert field_plan.desired_checked is True
+
+
+def test_field_plan_can_preserve_explicit_unchecked_intent():
+    field = make_field(
+        "ordinary_checkbox",
+        "Ordinary Checkbox",
+        FormFieldType.CHECKBOX,
+    )
+
+    field_plan = FieldPlan(
+        field=field,
+        action=FieldAction.FILL_VERIFIED,
+        value=None,
+        reason="Explicit test checkbox intent.",
+        desired_checked=False,
+    )
+
+    assert field_plan.value is None
+    assert field_plan.desired_checked is False
+
+def test_checkbox_intent_is_not_considered_string_fillable():
+    field = make_field(
+        "ordinary_checkbox",
+        "Ordinary Checkbox",
+        FormFieldType.CHECKBOX,
+    )
+
+    field_plan = FieldPlan(
+        field=field,
+        action=FieldAction.FILL_VERIFIED,
+        value=None,
+        reason="Explicit test checkbox intent.",
+        desired_checked=True,
+    )
+
+    assert field_plan.may_fill is False
+
+
+def test_ordinary_string_plan_has_no_checkbox_intent():
+    field = make_field(
+        "first_name",
+        "First Name",
+        FormFieldType.TEXT,
+    )
+
+    field_plan = FieldPlan(
+        field=field,
+        action=FieldAction.FILL_VERIFIED,
+        value="Test",
+        reason="Verified ordinary profile field.",
+    )
+
+    assert field_plan.may_fill is True
+    assert field_plan.desired_checked is None

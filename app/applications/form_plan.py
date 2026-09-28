@@ -37,12 +37,23 @@ class FormPlanStatus(str, Enum):
 class FieldPlan:
     """
     Browser-independent instruction for one application field.
+
+    value carries verified string data for ordinary fields.
+
+    desired_checked carries an explicitly resolved boolean state for a
+    CHECKBOX field. It is modeled separately so checkbox state is never
+    encoded through ambiguous strings such as "true", "false", "yes",
+    or "on".
+
+    This model represents planning intent only. A checkbox intent does
+    not by itself authorize browser mutation or submission.
     """
 
     field: FormField
     action: FieldAction
     value: Optional[str]
     reason: str
+    desired_checked: Optional[bool] = None
 
     @property
     def may_fill(self) -> bool:

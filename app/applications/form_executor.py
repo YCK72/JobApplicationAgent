@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from app.applications.checkbox_policy import (
+    ApplicationCheckboxPolicy,
+    CheckboxPolicy,
+)
 from app.applications.form_models import (
     FormField,
     FormFieldType,
@@ -30,11 +34,19 @@ class AuthorizedFieldAction:
     One field action explicitly authorized to cross the browser-mutation
     boundary.
 
-    This object does not execute the action.
+    value carries verified string data for ordinary executable fields.
+
+    desired_checked carries an explicitly resolved boolean state for an
+    authorized CHECKBOX field. Checkbox state is represented separately
+    from value so boolean intent is never encoded through strings such as
+    "true", "false", "yes", or "on".
+
+    This object does not execute the action or authorize submission.
     """
 
     field: FormField
-    value: str
+    value: str | None
+    desired_checked: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -72,18 +84,29 @@ class ApplicationFormExecutor:
     Validate whether a FormAnswerPlan may cross the browser execution
     boundary.
 
-    Supported actions remain narrowly scoped to:
+    Supported authorization is narrowly scoped to:
     - verified text-like values,
     - deterministically resolved native SELECT values,
     - deterministically resolved native RADIO values,
-    - explicitly authorized resume FILE paths.
+    - explicitly authorized resume FILE paths,
+    - explicitly resolved CHECKBOX boolean intent whose label matches the
+      narrow checkbox semantic allowlist.
 
     FILE actions require an independently supplied resume path and must
     resolve to that exact path before execution authorization is granted.
 
+    CHECKBOX authorization requires:
+    - a CHECKBOX field,
+    - no string value,
+    - an explicit desired_checked boolean,
+    - SAFE classification by ApplicationCheckboxPolicy.
+
+    Checkbox authorization only permits the action to cross this planning
+    boundary. It does not itself provide browser checkbox execution.
+
     This class performs authorization only. It does not fill fields,
-    select options, attach files, click controls, press keys, bypass
-    verification, or submit applications.
+    select options, attach files, toggle controls, click controls, press
+    keys, bypass verification, or submit applications.
 
     External targets receive additional execution-time policy checks
     before mutation. FILE mutation therefore remains blocked externally
@@ -101,6 +124,14 @@ class ApplicationFormExecutor:
         FormFieldType.RADIO,
         FormFieldType.FILE,
     }
+
+    def __init__(
+        self,
+        checkbox_policy: ApplicationCheckboxPolicy | None = None,
+    ) -> None:
+        self._checkbox_policy = (
+            checkbox_policy or ApplicationCheckboxPolicy()
+        )
 
     def authorize(
         self,
@@ -133,10 +164,29 @@ class ApplicationFormExecutor:
                     "authorized for verified automatic filling."
                 )
 
+            if field_plan.field.field_type == FormFieldType.CHECKBOX:
+                checkbox_action = self._authorize_checkbox(
+                    field_plan=field_plan,
+                )
+
+                if checkbox_action is None:
+                    return self._blocked(
+                        "CHECKBOX action is not explicitly authorized "
+                        "for controlled browser execution."
+                    )
+
+                actions.append(checkbox_action)
+                continue
+
+            if field_plan.desired_checked is not None:
+                return self._blocked(
+                    "Non-CHECKBOX field contains checkbox intent."
+                )
+
             if not field_plan.may_fill:
                 return self._blocked(
-                    "Verified fill action does not contain an "
-                    "authorized value."
+                    "Verified fill action is not eligible for automatic "
+                    "browser execution."
                 )
 
             if field_plan.value is None:
@@ -183,6 +233,7 @@ class ApplicationFormExecutor:
                 AuthorizedFieldAction(
                     field=field_plan.field,
                     value=field_plan.value,
+                    desired_checked=None,
                 )
             )
 
@@ -194,6 +245,40 @@ class ApplicationFormExecutor:
                 "for controlled browser execution."
             ),
             authorized_resume_path=normalized_resume_path,
+        )
+
+    def _authorize_checkbox(
+        self,
+        *,
+        field_plan,
+    ) -> AuthorizedFieldAction | None:
+        """
+        Authorize one typed CHECKBOX action.
+
+        Semantic safety and desired boolean intent are independent:
+        a SAFE checkbox label never manufactures a checked state.
+
+        This method authorizes representation only. It does not mutate
+        browser state.
+        """
+
+        if field_plan.value is not None:
+            return None
+
+        if not isinstance(field_plan.desired_checked, bool):
+            return None
+
+        policy_result = self._checkbox_policy.classify(
+            field_plan.field.label
+        )
+
+        if policy_result.policy != CheckboxPolicy.SAFE:
+            return None
+
+        return AuthorizedFieldAction(
+            field=field_plan.field,
+            value=None,
+            desired_checked=field_plan.desired_checked,
         )
 
     @staticmethod

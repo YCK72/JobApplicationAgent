@@ -41,11 +41,13 @@ def make_field(
 def make_action(
     *,
     field: FormField | None = None,
-    value: str = "Test",
+    value: str | None = "Test",
+    desired_checked: bool | None = None,
 ) -> AuthorizedFieldAction:
     return AuthorizedFieldAction(
         field=field or make_field(),
         value=value,
+        desired_checked=desired_checked,
     )
 
 
@@ -178,18 +180,92 @@ def test_blocked_plan_never_reaches_writer():
     writer.write_text.assert_not_called()
 
 
-def test_unsupported_field_type_never_reaches_writer():
+def test_safe_checkbox_true_intent_reaches_dedicated_writer_method():
     writer = make_writer()
     executor = BrowserFormExecutor(writer)
 
+    field = make_field(
+        "preferred_name_checkbox",
+        "Use my verified preferred name on this application.",
+        FormFieldType.CHECKBOX,
+    )
+
     plan = make_plan(
         make_action(
-            field=make_field(
-                "unsupported",
-                "Unsupported",
-                FormFieldType.CHECKBOX,
-            ),
-            value="Verified Value",
+            field=field,
+            value=None,
+            desired_checked=True,
+        )
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.succeeded is True
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    writer.set_checkbox_state.assert_called_once_with(
+        field=field,
+        checked=True,
+    )
+
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
+    writer.select_radio_option.assert_not_called()
+    writer.upload_file.assert_not_called()
+
+
+def test_safe_checkbox_false_intent_reaches_dedicated_writer_method():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        "phone_checkbox",
+        "Use my verified phone number for application contact.",
+        FormFieldType.CHECKBOX,
+    )
+
+    plan = make_plan(
+        make_action(
+            field=field,
+            value=None,
+            desired_checked=False,
+        )
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.succeeded is True
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    writer.set_checkbox_state.assert_called_once_with(
+        field=field,
+        checked=False,
+    )
+
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
+    writer.select_radio_option.assert_not_called()
+    writer.upload_file.assert_not_called()
+
+def test_checkbox_with_string_value_never_reaches_writer():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        "preferred_name_checkbox",
+        "Use my verified preferred name on this application.",
+        FormFieldType.CHECKBOX,
+    )
+
+    plan = make_plan(
+        make_action(
+            field=field,
+            value="true",
+            desired_checked=True,
         )
     )
 
@@ -199,10 +275,73 @@ def test_unsupported_field_type_never_reaches_writer():
     assert result.completed_actions == 0
     assert result.may_submit is False
 
+    writer.set_checkbox_state.assert_not_called()
     writer.write_text.assert_not_called()
     writer.select_option.assert_not_called()
     writer.select_radio_option.assert_not_called()
+    writer.upload_file.assert_not_called()
 
+
+def test_checkbox_without_boolean_intent_never_reaches_writer():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        "preferred_name_checkbox",
+        "Use my verified preferred name on this application.",
+        FormFieldType.CHECKBOX,
+    )
+
+    plan = make_plan(
+        make_action(
+            field=field,
+            value=None,
+            desired_checked=None,
+        )
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.set_checkbox_state.assert_not_called()
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
+    writer.select_radio_option.assert_not_called()
+    writer.upload_file.assert_not_called()
+
+
+def test_non_checkbox_with_boolean_intent_never_reaches_writer():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        "first_name",
+        "First Name",
+        FormFieldType.TEXT,
+    )
+
+    plan = make_plan(
+        make_action(
+            field=field,
+            value="Test",
+            desired_checked=True,
+        )
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.set_checkbox_state.assert_not_called()
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
+    writer.select_radio_option.assert_not_called()
+    writer.upload_file.assert_not_called()
 
 def test_external_resume_file_reaches_writer():
     writer = make_writer()
@@ -884,7 +1023,6 @@ def test_external_sensitive_select_remains_blocked():
 @pytest.mark.parametrize(
     "field_type",
     [
-        FormFieldType.CHECKBOX,
         FormFieldType.UNKNOWN,
     ],
 )
@@ -913,9 +1051,8 @@ def test_non_select_non_text_controls_remain_blocked(
     assert result.completed_actions == 0
     assert result.may_submit is False
 
-    writer.write_text.assert_not_called()
     writer.select_option.assert_not_called()
-    writer.select_radio_option.assert_not_called()
+    writer.write_text.assert_not_called()
 
 def test_local_fixture_file_reaches_writer(
     tmp_path,

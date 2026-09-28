@@ -1145,3 +1145,437 @@ def test_radio_rejects_unverifiable_dom_control():
         )
 
     option_locator.check.assert_not_called()
+
+def test_native_checkbox_checks_when_currently_unchecked():
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "checkbox",
+    }
+    locator.is_checked.return_value = False
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    writer.set_checkbox_state(
+        field=field,
+        checked=True,
+    )
+
+    page.locator.assert_called_once_with(
+        '[id="preferred_name"]'
+    )
+
+    locator.is_checked.assert_called_once_with()
+    locator.check.assert_called_once_with()
+
+    locator.uncheck.assert_not_called()
+    locator.click.assert_not_called()
+    locator.fill.assert_not_called()
+    locator.select_option.assert_not_called()
+
+
+def test_native_checkbox_unchecks_when_currently_checked():
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "checkbox",
+    }
+    locator.is_checked.return_value = True
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="phone_contact",
+        label="Use my verified phone number for application contact.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    writer.set_checkbox_state(
+        field=field,
+        checked=False,
+    )
+
+    locator.is_checked.assert_called_once_with()
+    locator.uncheck.assert_called_once_with()
+
+    locator.check.assert_not_called()
+    locator.click.assert_not_called()
+    locator.fill.assert_not_called()
+    locator.select_option.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("current_checked", "desired_checked"),
+    [
+        (False, False),
+        (True, True),
+    ],
+)
+def test_checkbox_is_noop_when_already_in_desired_state(
+    current_checked: bool,
+    desired_checked: bool,
+):
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "checkbox",
+    }
+    locator.is_checked.return_value = current_checked
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    writer.set_checkbox_state(
+        field=field,
+        checked=desired_checked,
+    )
+
+    locator.is_checked.assert_called_once_with()
+
+    locator.check.assert_not_called()
+    locator.uncheck.assert_not_called()
+    locator.click.assert_not_called()
+
+
+def test_checkbox_rejects_non_checkbox_field_without_dom_mutation():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="not supported",
+    ):
+        writer.set_checkbox_state(
+            field=make_field(
+                field_type=FormFieldType.TEXT,
+            ),
+            checked=True,
+        )
+
+    page.locator.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "checked",
+    [
+        None,
+        "true",
+        "false",
+        1,
+        0,
+    ],
+)
+def test_checkbox_rejects_non_boolean_desired_state(
+    checked,
+):
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="boolean",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=checked,
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_checkbox_missing_locator_is_rejected():
+    page, id_locator, name_locator = (
+        make_page_with_locator_counts(
+            id_count=0,
+            name_count=0,
+        )
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="could not be resolved",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=True,
+        )
+
+    id_locator.check.assert_not_called()
+    id_locator.uncheck.assert_not_called()
+    name_locator.check.assert_not_called()
+    name_locator.uncheck.assert_not_called()
+
+
+def test_checkbox_duplicate_id_is_rejected():
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 2
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="multiple controls by id",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=True,
+        )
+
+    locator.check.assert_not_called()
+    locator.uncheck.assert_not_called()
+    locator.click.assert_not_called()
+
+
+def test_checkbox_duplicate_name_is_rejected():
+    page, id_locator, name_locator = (
+        make_page_with_locator_counts(
+            id_count=0,
+            name_count=2,
+        )
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="multiple controls by name",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=True,
+        )
+
+    id_locator.check.assert_not_called()
+    name_locator.check.assert_not_called()
+    name_locator.uncheck.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("tag_name", "input_type"),
+    [
+        ("DIV", "checkbox"),
+        ("BUTTON", "checkbox"),
+        ("INPUT", "radio"),
+        ("INPUT", "text"),
+        ("SELECT", "select-one"),
+    ],
+)
+def test_checkbox_rejects_non_native_checkbox_controls(
+    tag_name: str,
+    input_type: str,
+):
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": tag_name,
+        "type": input_type,
+    }
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="not a native HTML checkbox input",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=True,
+        )
+
+    locator.is_checked.assert_not_called()
+    locator.check.assert_not_called()
+    locator.uncheck.assert_not_called()
+    locator.click.assert_not_called()
+
+
+def test_checkbox_rejects_unverifiable_dom_control():
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = None
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="could not be safely verified",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=True,
+        )
+
+    locator.is_checked.assert_not_called()
+    locator.check.assert_not_called()
+    locator.uncheck.assert_not_called()
+
+
+def test_checkbox_rejects_dom_inspection_failure():
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.side_effect = RuntimeError(
+        "DOM inspection failed"
+    )
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="could not be safely verified",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=True,
+        )
+
+    locator.is_checked.assert_not_called()
+    locator.check.assert_not_called()
+    locator.uncheck.assert_not_called()
+
+
+def test_checkbox_rejects_non_boolean_browser_state():
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "checkbox",
+    }
+    locator.is_checked.return_value = "false"
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="state could not be safely verified",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=True,
+        )
+
+    locator.check.assert_not_called()
+    locator.uncheck.assert_not_called()
+    locator.click.assert_not_called()
+
+
+def test_checkbox_rejects_browser_state_inspection_failure():
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "checkbox",
+    }
+    locator.is_checked.side_effect = RuntimeError(
+        "State inspection failed"
+    )
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="preferred_name",
+        label="Use my verified preferred name on this application.",
+        field_type=FormFieldType.CHECKBOX,
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="state could not be safely verified",
+    ):
+        writer.set_checkbox_state(
+            field=field,
+            checked=True,
+        )
+
+    locator.check.assert_not_called()
+    locator.uncheck.assert_not_called()
+    locator.click.assert_not_called()

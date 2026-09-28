@@ -201,6 +201,62 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
 
         option_locator.check()
 
+    def set_checkbox_state(
+        self,
+        field: FormField,
+        checked: bool,
+    ) -> None:
+        """
+        Set one authorized native CHECKBOX to an exact boolean state.
+
+        The desired state must already have been explicitly authorized
+        upstream. This method does not infer intent and never blindly
+        toggles a checkbox.
+
+        The resolved browser control is revalidated immediately before
+        mutation and must still be an actual native
+        HTML INPUT[type=checkbox].
+        """
+        if field.field_type != FormFieldType.CHECKBOX:
+            raise PlaywrightFieldWriterError(
+                "Field type is not supported for checkbox mutation."
+            )
+
+        if not isinstance(checked, bool):
+            raise PlaywrightFieldWriterError(
+                "CHECKBOX desired state must be a boolean."
+            )
+
+        locator = self._resolve_locator(field)
+
+        if locator.count() != 1:
+            raise PlaywrightFieldWriterError(
+                "Field identifier did not resolve to exactly one control."
+            )
+
+        self._validate_native_checkbox_input(locator)
+
+        try:
+            current_checked = locator.is_checked()
+        except Exception as exc:
+            raise PlaywrightFieldWriterError(
+                "CHECKBOX state could not be safely verified."
+            ) from exc
+
+        if not isinstance(current_checked, bool):
+            raise PlaywrightFieldWriterError(
+                "CHECKBOX state could not be safely verified."
+            )
+
+        if current_checked == checked:
+            return
+
+        if checked:
+            locator.check()
+            return
+
+        locator.uncheck()
+
     def upload_file(
         self,
         field: FormField,
@@ -322,6 +378,50 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
         ):
             raise PlaywrightFieldWriterError(
                 "Resolved FILE field is not a native HTML file input."
+            )
+
+    @staticmethod
+    def _validate_native_checkbox_input(
+        locator,
+    ) -> None:
+        """
+        Require the resolved browser control to be INPUT[type=checkbox].
+        """
+        try:
+            control = locator.evaluate(
+                """element => ({
+                    tagName: element.tagName,
+                    type: element.type
+                })"""
+            )
+        except Exception as exc:
+            raise PlaywrightFieldWriterError(
+                "CHECKBOX control type could not be safely verified."
+            ) from exc
+
+        if not isinstance(control, dict):
+            raise PlaywrightFieldWriterError(
+                "CHECKBOX control type could not be safely verified."
+            )
+
+        tag_name = control.get("tagName")
+        input_type = control.get("type")
+
+        if not isinstance(tag_name, str) or not isinstance(
+            input_type,
+            str,
+        ):
+            raise PlaywrightFieldWriterError(
+                "CHECKBOX control type could not be safely verified."
+            )
+
+        if (
+            tag_name.strip().casefold() != "input"
+            or input_type.strip().casefold() != "checkbox"
+        ):
+            raise PlaywrightFieldWriterError(
+                "Resolved CHECKBOX field is not a native HTML "
+                "checkbox input."
             )
 
     @staticmethod

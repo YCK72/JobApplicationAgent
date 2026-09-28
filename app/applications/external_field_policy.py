@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from app.applications.checkbox_policy import (
+    ApplicationCheckboxPolicy,
+    CheckboxPolicy,
+)
 from app.applications.form_executor import AuthorizedFieldAction
 from app.applications.form_models import FormFieldType
 from app.applications.question_policy import (
@@ -53,12 +57,19 @@ class ExternalFieldExecutionPolicy:
     classified SAFE by ApplicationQuestionPolicy and use supported
     text-like, native SELECT, or native RADIO controls.
 
+    CHECKBOX controls use a separate authorization path because their
+    intent is represented as an explicit boolean rather than a string.
+    They may pass only when:
+    - no string value is present,
+    - desired_checked is an explicit bool,
+    - ApplicationCheckboxPolicy classifies the label SAFE.
+
     FILE controls use a separate, narrower authorization path. Only
     controls whose semantic label identifies the candidate resume or CV
     exactly may pass this policy. Other uploads remain blocked.
 
-    Unknown, review, sensitive, manual, and unsupported fields fail
-    closed.
+    Unknown, review, sensitive, manual, malformed, and unsupported fields
+    fail closed.
 
     This class does not generate answers, inspect pages, navigate, mutate
     browser controls, choose files, validate local files, bypass
@@ -83,11 +94,17 @@ class ExternalFieldExecutionPolicy:
     def __init__(
         self,
         question_policy: ApplicationQuestionPolicy | None = None,
+        checkbox_policy: ApplicationCheckboxPolicy | None = None,
     ) -> None:
         self._question_policy = (
             question_policy
             if question_policy is not None
             else ApplicationQuestionPolicy()
+        )
+        self._checkbox_policy = (
+            checkbox_policy
+            if checkbox_policy is not None
+            else ApplicationCheckboxPolicy()
         )
 
     def authorize(
@@ -95,16 +112,6 @@ class ExternalFieldExecutionPolicy:
         action: AuthorizedFieldAction,
     ) -> ExternalFieldPolicyResult:
         field = action.field
-
-        if not isinstance(action.value, str):
-            return self._blocked(
-                "External field value must be a verified string."
-            )
-
-        if not action.value.strip():
-            return self._blocked(
-                "External field value must not be empty."
-            )
 
         if not isinstance(field.label, str):
             return self._blocked(
@@ -114,6 +121,24 @@ class ExternalFieldExecutionPolicy:
         if not field.label.strip():
             return self._blocked(
                 "External field label is missing."
+            )
+
+        if field.field_type == FormFieldType.CHECKBOX:
+            return self._authorize_checkbox(action)
+
+        if action.desired_checked is not None:
+            return self._blocked(
+                "Non-CHECKBOX external field contains checkbox intent."
+            )
+
+        if not isinstance(action.value, str):
+            return self._blocked(
+                "External field value must be a verified string."
+            )
+
+        if not action.value.strip():
+            return self._blocked(
+                "External field value must not be empty."
             )
 
         if field.field_type == FormFieldType.FILE:
@@ -145,6 +170,51 @@ class ExternalFieldExecutionPolicy:
                 "External field uses a supported control type and is "
                 "classified as safe ordinary candidate profile "
                 "information."
+            ),
+        )
+
+    def _authorize_checkbox(
+        self,
+        action: AuthorizedFieldAction,
+    ) -> ExternalFieldPolicyResult:
+        """
+        Independently re-authorize one external CHECKBOX action.
+
+        Checkbox boolean intent must already have been explicitly resolved
+        upstream. This policy never manufactures, infers, or changes that
+        intent.
+        """
+
+        if action.value is not None:
+            return self._blocked(
+                "External CHECKBOX action must not contain a string value."
+            )
+
+        if not isinstance(action.desired_checked, bool):
+            return self._blocked(
+                "External CHECKBOX action requires explicit boolean intent."
+            )
+
+        try:
+            policy_result = self._checkbox_policy.classify(
+                action.field.label
+            )
+        except (TypeError, ValueError):
+            return self._blocked(
+                "External CHECKBOX label could not be safely classified."
+            )
+
+        if policy_result.policy != CheckboxPolicy.SAFE:
+            return self._blocked(
+                "External CHECKBOX is not classified as safely "
+                "automatable."
+            )
+
+        return ExternalFieldPolicyResult(
+            status=ExternalFieldPolicyStatus.ALLOWED,
+            reason=(
+                "External CHECKBOX has explicit boolean intent and "
+                "matches the narrow checkbox semantic allowlist."
             ),
         )
 

@@ -65,6 +65,21 @@ class BrowserFieldWriter(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def set_checkbox_state(
+        self,
+        field: FormField,
+        checked: bool,
+    ) -> None:
+        """
+        Set one authorized native CHECKBOX to an explicit boolean state.
+
+        This method does not infer checkbox intent or toggle blindly.
+        Authorization must already have supplied the exact desired boolean
+        state before this browser-mutation boundary.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def upload_file(
         self,
         field: FormField,

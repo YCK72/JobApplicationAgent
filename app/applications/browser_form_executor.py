@@ -48,14 +48,19 @@ class BrowserFormExecutor:
     - verified text-like mutation,
     - deterministic native SELECT mutation,
     - deterministic native RADIO mutation,
+    - explicitly authorized native CHECKBOX state mutation,
     - controlled native FILE attachment.
+
+    CHECKBOX mutation requires an explicit typed boolean intent.
+    Checkbox state is never inferred from string values.
 
     FILE mutation requires an independently authorized resume path.
     The requested FILE path must resolve to the exact same path
     before browser mutation is allowed.
 
-    External SELECT and RADIO mutation remain prohibited unless the
-    independent external field policy explicitly authorizes them.
+    External SELECT, RADIO, and CHECKBOX mutation remain prohibited
+    unless the independent external field policy explicitly authorizes
+    them.
 
     External FILE mutation remains prohibited unless the independent
     external field policy explicitly authorizes it.
@@ -76,6 +81,7 @@ class BrowserFormExecutor:
         | {
             FormFieldType.SELECT,
             FormFieldType.RADIO,
+            FormFieldType.CHECKBOX,
             FormFieldType.FILE,
         }
     )
@@ -150,6 +156,29 @@ class BrowserFormExecutor:
                     reason=(
                         "Execution plan contains a field type that "
                         "is not supported for browser mutation."
+                    ),
+                )
+
+            if action.field.field_type == FormFieldType.CHECKBOX:
+                checkbox_error = self._checkbox_authorization_error(
+                    action_value=action.value,
+                    desired_checked=action.desired_checked,
+                )
+
+                if checkbox_error is not None:
+                    return BrowserExecutionResult(
+                        status=BrowserExecutionStatus.BLOCKED,
+                        completed_actions=completed_actions,
+                        reason=checkbox_error,
+                    )
+
+            elif action.desired_checked is not None:
+                return BrowserExecutionResult(
+                    status=BrowserExecutionStatus.BLOCKED,
+                    completed_actions=completed_actions,
+                    reason=(
+                        "Non-CHECKBOX browser action contains "
+                        "checkbox intent."
                     ),
                 )
 
@@ -239,6 +268,13 @@ class BrowserFormExecutor:
             )
             return
 
+        if action.field.field_type == FormFieldType.CHECKBOX:
+            self._writer.set_checkbox_state(
+                field=action.field,
+                checked=action.desired_checked,
+            )
+            return
+
         if action.field.field_type == FormFieldType.FILE:
             self._writer.upload_file(
                 field=action.field,
@@ -249,6 +285,31 @@ class BrowserFormExecutor:
         raise ValueError(
             "Authorized action contains an unsupported field type."
         )
+
+    @staticmethod
+    def _checkbox_authorization_error(
+        *,
+        action_value: str | None,
+        desired_checked: bool | None,
+    ) -> str | None:
+        """
+        Validate the typed representation of one CHECKBOX action.
+
+        Checkbox state is carried only through desired_checked.
+        String values are never interpreted as checkbox intent.
+        """
+
+        if action_value is not None:
+            return (
+                "CHECKBOX action must not contain a string value."
+            )
+
+        if not isinstance(desired_checked, bool):
+            return (
+                "CHECKBOX action requires explicit boolean intent."
+            )
+
+        return None
 
     @staticmethod
     def _file_authorization_error(

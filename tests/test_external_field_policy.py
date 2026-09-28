@@ -15,7 +15,8 @@ def make_action(
     label: str,
     *,
     field_type: FormFieldType = FormFieldType.TEXT,
-    value: str = "Verified Value",
+    value: str | None = "Verified Value",
+    desired_checked: bool | None = None,
 ) -> AuthorizedFieldAction:
     return AuthorizedFieldAction(
         field=FormField(
@@ -24,6 +25,7 @@ def make_action(
             field_type=field_type,
         ),
         value=value,
+        desired_checked=desired_checked,
     )
 
 
@@ -159,8 +161,6 @@ def test_review_or_unknown_field_is_blocked(
 @pytest.mark.parametrize(
     "field_type",
     [
-        FormFieldType.CHECKBOX,
-        FormFieldType.FILE,
         FormFieldType.UNKNOWN,
     ],
 )
@@ -172,6 +172,126 @@ def test_unsupported_control_type_is_blocked(
         make_action(
             "First Name",
             field_type=field_type,
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.BLOCKED
+    assert result.may_mutate is False
+    assert result.may_submit is False
+
+def test_safe_checkbox_with_true_intent_is_allowed():
+    result = ExternalFieldExecutionPolicy().authorize(
+        make_action(
+            "Use my verified preferred name on this application.",
+            field_type=FormFieldType.CHECKBOX,
+            value=None,
+            desired_checked=True,
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.ALLOWED
+    assert result.may_mutate is True
+    assert result.may_submit is False
+
+
+def test_safe_checkbox_with_false_intent_is_allowed():
+    result = ExternalFieldExecutionPolicy().authorize(
+        make_action(
+            "Use my verified phone number for application contact.",
+            field_type=FormFieldType.CHECKBOX,
+            value=None,
+            desired_checked=False,
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.ALLOWED
+    assert result.may_mutate is True
+    assert result.may_submit is False
+
+
+def test_safe_checkbox_without_explicit_boolean_intent_is_blocked():
+    result = ExternalFieldExecutionPolicy().authorize(
+        make_action(
+            "Use my verified preferred name on this application.",
+            field_type=FormFieldType.CHECKBOX,
+            value=None,
+            desired_checked=None,
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.BLOCKED
+    assert result.may_mutate is False
+    assert result.may_submit is False
+
+
+def test_checkbox_with_string_value_is_blocked():
+    result = ExternalFieldExecutionPolicy().authorize(
+        make_action(
+            "Use my verified preferred name on this application.",
+            field_type=FormFieldType.CHECKBOX,
+            value="true",
+            desired_checked=True,
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.BLOCKED
+    assert result.may_mutate is False
+    assert result.may_submit is False
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "I agree to the terms and conditions.",
+        "I consent to receive recruiting communications.",
+        "I certify that this information is correct.",
+        "I am authorized to work in the United States.",
+        "I will require visa sponsorship.",
+        "I am a United States citizen.",
+        "I identify as Hispanic or Latino.",
+        "I have a disability.",
+        "I am a veteran.",
+        "I have been convicted of a crime.",
+        "I have a conflict of interest.",
+    ],
+)
+def test_blocked_checkbox_semantics_remain_blocked(
+    label: str,
+):
+    result = ExternalFieldExecutionPolicy().authorize(
+        make_action(
+            label,
+            field_type=FormFieldType.CHECKBOX,
+            value=None,
+            desired_checked=True,
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.BLOCKED
+    assert result.may_mutate is False
+    assert result.may_submit is False
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Confirm",
+        "Yes",
+        "No",
+        "Checkbox",
+        "Select this option",
+        "Include this information with my application.",
+    ],
+)
+def test_review_or_ambiguous_checkbox_remains_blocked(
+    label: str,
+):
+    result = ExternalFieldExecutionPolicy().authorize(
+        make_action(
+            label,
+            field_type=FormFieldType.CHECKBOX,
+            value=None,
+            desired_checked=False,
         )
     )
 
