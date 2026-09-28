@@ -9,6 +9,7 @@ from app.applications.adapters.base import (
 )
 from app.applications.form_models import (
     ApplicationForm,
+    FormControlKind,
     FormField,
     FormFieldOption,
     FormFieldType,
@@ -239,6 +240,7 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
             field_id=radio_name,
             label=self._humanize_identifier(radio_name),
             field_type=FormFieldType.RADIO,
+            control_kind=FormControlKind.NATIVE_INPUT,
             required=required,
             options=options,
             option_details=option_details,
@@ -300,16 +302,29 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
             autocomplete=autocomplete,
         )
 
+        control_kind = self._control_kind(
+            tag_name=tag_name,
+            input_type=input_type,
+            role=role,
+        )
+
         required = self._is_required(control)
 
-        options = self._options(
+        option_details = self._option_details(
             control=control,
             field_type=field_type,
+            control_kind=control_kind,
+        )
+
+        options = self._options(
+            option_details=option_details,
         )
 
         current_value = self._current_value(
             control=control,
             field_type=field_type,
+            control_kind=control_kind,
+            option_details=option_details,
         )
 
         current_checked = self._current_checked(
@@ -321,8 +336,10 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
             field_id=field_id,
             label=label,
             field_type=field_type,
+            control_kind=control_kind,
             required=required,
             options=options,
+            option_details=option_details,
             current_value=current_value,
             current_checked=current_checked,
         )
@@ -527,6 +544,38 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
         return normalized in generic_labels
 
     @staticmethod
+    def _control_kind(
+        *,
+        tag_name: str,
+        input_type: str,
+        role: str = "",
+    ) -> FormControlKind:
+        """
+        Describe the inspected DOM implementation of one application field.
+
+        This metadata is intentionally separate from FormFieldType.
+
+        For example, both a native HTML SELECT and an INPUT[role=combobox]
+        may represent the semantic SELECT field type while requiring
+        different browser-mutation strategies.
+
+        Classification is read-only and does not authorize execution.
+        """
+        if tag_name == "select":
+            return FormControlKind.NATIVE_SELECT
+
+        if tag_name == "textarea":
+            return FormControlKind.NATIVE_TEXTAREA
+
+        if tag_name == "input":
+            if role == "combobox":
+                return FormControlKind.CUSTOM_COMBOBOX
+
+            return FormControlKind.NATIVE_INPUT
+
+        return FormControlKind.UNKNOWN
+
+    @staticmethod
     def _field_type(
         *,
         tag_name: str,
@@ -590,45 +639,96 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
         )
 
     @classmethod
-    def _options(
-        cls,
-        *,
-        control: Locator,
-        field_type: FormFieldType,
-    ) -> list[str]:
+    def _option_details(
+            cls,
+            *,
+            control: Locator,
+            field_type: FormFieldType,
+            control_kind: FormControlKind,
+    ) -> list[FormFieldOption]:
         """
-        Read options from native HTML select controls.
+        Preserve exact inspected native option identity.
 
-        Custom Greenhouse combobox options are intentionally not opened
-        or clicked here. Until their DOM structure is inspected and
-        tested independently, those controls normalize as SELECT with an
-        empty options list.
+        Only native HTML SELECT controls expose option execution metadata
+        here. Custom comboboxes are intentionally not opened, clicked, or
+        queried through interactive behavior during inspection.
         """
-        if field_type != FormFieldType.SELECT:
+        if (
+                field_type != FormFieldType.SELECT
+                or control_kind != FormControlKind.NATIVE_SELECT
+        ):
             return []
 
         option_locators = control.locator("option")
 
-        values: list[str] = []
+        details: list[FormFieldOption] = []
 
         for index in range(option_locators.count()):
             option = option_locators.nth(index)
 
-            text = cls._clean_text(
+            label = cls._clean_text(
                 option.inner_text()
             )
 
-            if text:
-                values.append(text)
+            native_value = (
+                    option.get_attribute("value") or ""
+            ).strip()
 
-        return cls._deduplicate(values)
+            if not label or not native_value:
+                continue
+
+            if any(
+                    detail.label == label
+                    and detail.value == native_value
+                    for detail in details
+            ):
+                continue
+
+            details.append(
+                FormFieldOption(
+                    label=label,
+                    value=native_value,
+                )
+            )
+
+        return details
+
+    @classmethod
+    def _options(
+            cls,
+            *,
+            option_details: list[FormFieldOption],
+    ) -> list[str]:
+        """
+        Return deduplicated human-visible semantic option labels.
+        """
+        return cls._deduplicate(
+            detail.label
+            for detail in option_details
+        )
 
     @staticmethod
     def _current_value(
-        *,
-        control: Locator,
-        field_type: FormFieldType,
+            *,
+            control: Locator,
+            field_type: FormFieldType,
+            control_kind: FormControlKind,
+            option_details: list[FormFieldOption],
     ) -> str | None:
+        """
+        Return the currently observed semantic value of a control.
+
+        Native SELECT controls expose provider/browser values through
+        input_value(). Those native values must be mapped back to the
+        human-visible semantic option label captured during inspection.
+
+        Missing or ambiguous native-value mappings fail closed by
+        returning None rather than exposing a provider-native value as
+        semantic application state.
+
+        Other non-file controls preserve their existing inspected value
+        behavior.
+        """
         if field_type == FormFieldType.FILE:
             return None
 
@@ -636,6 +736,21 @@ class GreenhouseFormAdapter(ApplicationFormAdapter):
 
         if not value:
             return None
+
+        if (
+                field_type == FormFieldType.SELECT
+                and control_kind == FormControlKind.NATIVE_SELECT
+        ):
+            semantic_matches = [
+                option.label
+                for option in option_details
+                if option.value == value
+            ]
+
+            if len(semantic_matches) != 1:
+                return None
+
+            return semantic_matches[0]
 
         return value
 

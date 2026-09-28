@@ -4,6 +4,10 @@ from app.applications.adapters.greenhouse import (
     GreenhouseFormAdapter,
 )
 from app.applications.form_models import (
+    FormControlKind,
+    FormFieldType,
+)
+from app.applications.form_models import (
     FormFieldType,
 )
 
@@ -13,7 +17,7 @@ def make_control(
     tag_name: str = "input",
     attributes: dict[str, str | None] | None = None,
     value: str = "",
-    options: list[str] | None = None,
+    options: list[str | tuple[str, str]] | None = None,
     checked: bool = False,
 ) -> MagicMock:
     control = MagicMock()
@@ -37,9 +41,22 @@ def make_control(
 
     option_objects = []
 
-    for option_text in option_values:
+    for option_value in option_values:
         option = MagicMock()
+
+        if isinstance(option_value, tuple):
+            option_text, native_value = option_value
+        else:
+            option_text = option_value
+            native_value = option_value
+
         option.inner_text.return_value = option_text
+        option.get_attribute.side_effect = (
+            lambda name, value=native_value: (
+                value if name == "value" else None
+            )
+        )
+
         option_objects.append(option)
 
     option_locator.nth.side_effect = (
@@ -1594,3 +1611,440 @@ def test_native_radio_group_preserves_ambiguous_label_mappings() -> None:
         ("Remote", "101"),
         ("Remote", "999"),
     ]
+
+def test_native_select_preserves_native_control_kind() -> None:
+    control = make_control(
+        tag_name="select",
+        attributes={
+            "id": "location",
+            "name": "location",
+        },
+        options=[
+            "Seattle",
+            "New York",
+        ],
+    )
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert form.fields[0].field_type == FormFieldType.SELECT
+    assert (
+        form.fields[0].control_kind
+        == FormControlKind.NATIVE_SELECT
+    )
+
+
+def test_greenhouse_combobox_preserves_custom_control_kind() -> None:
+    control = make_control(
+        attributes={
+            "id": "question_123",
+            "type": "text",
+            "role": "combobox",
+            "aria-label": "Preferred location",
+        },
+    )
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert form.fields[0].field_type == FormFieldType.SELECT
+    assert (
+        form.fields[0].control_kind
+        == FormControlKind.CUSTOM_COMBOBOX
+    )
+
+
+def test_greenhouse_combobox_inspection_does_not_mutate_control() -> None:
+    control = make_control(
+        attributes={
+            "id": "question_123",
+            "type": "text",
+            "role": "combobox",
+            "aria-label": "Preferred location",
+        },
+    )
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    adapter.inspect()
+
+    control.click.assert_not_called()
+    control.fill.assert_not_called()
+    control.press.assert_not_called()
+    control.select_option.assert_not_called()
+
+def test_native_text_input_preserves_native_control_kind() -> None:
+    control = make_control(
+        attributes={
+            "id": "first_name",
+            "type": "text",
+        },
+    )
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert (
+        form.fields[0].control_kind
+        == FormControlKind.NATIVE_INPUT
+    )
+
+
+def test_native_textarea_preserves_native_control_kind() -> None:
+    control = make_control(
+        tag_name="textarea",
+        attributes={
+            "id": "cover_letter_text",
+        },
+    )
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert (
+        form.fields[0].control_kind
+        == FormControlKind.NATIVE_TEXTAREA
+    )
+
+
+def test_native_checkbox_preserves_native_control_kind() -> None:
+    control = make_control(
+        attributes={
+            "id": "preferred_name",
+            "type": "checkbox",
+        },
+    )
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert (
+        form.fields[0].control_kind
+        == FormControlKind.NATIVE_INPUT
+    )
+
+
+def test_native_file_preserves_native_control_kind() -> None:
+    control = make_control(
+        attributes={
+            "id": "resume",
+            "type": "file",
+        },
+    )
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert (
+        form.fields[0].control_kind
+        == FormControlKind.NATIVE_INPUT
+    )
+
+
+def test_native_radio_group_preserves_native_control_kind() -> None:
+    yes = make_control(
+        attributes={
+            "id": "remote_yes",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "yes",
+        },
+    )
+
+    no = make_control(
+        attributes={
+            "id": "remote_no",
+            "name": "remote_preference",
+            "type": "radio",
+            "value": "no",
+        },
+    )
+
+    page = make_page(
+        [yes, no],
+        labels={
+            "remote_yes": "Yes",
+            "remote_no": "No",
+        },
+    )
+
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+    assert form.fields[0].field_type == FormFieldType.RADIO
+    assert (
+        form.fields[0].control_kind
+        == FormControlKind.NATIVE_INPUT
+    )
+
+def test_native_select_preserves_label_to_native_value_mapping() -> None:
+    control = make_control(
+        tag_name="select",
+        attributes={
+            "id": "location",
+            "name": "location",
+        },
+        options=[
+            ("Seattle", "internal-101"),
+            ("New York", "internal-102"),
+        ],
+    )
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.field_type == FormFieldType.SELECT
+    assert (
+        field.control_kind
+        == FormControlKind.NATIVE_SELECT
+    )
+
+    assert field.options == [
+        "Seattle",
+        "New York",
+    ]
+
+    assert [
+        (option.label, option.value)
+        for option in field.option_details
+    ] == [
+        ("Seattle", "internal-101"),
+        ("New York", "internal-102"),
+    ]
+
+def test_native_select_current_value_is_semantic_option_label() -> None:
+    control = make_control(
+        tag_name="select",
+        attributes={
+            "id": "location",
+            "name": "location",
+        },
+        options=[
+            ("Seattle", "internal-101"),
+            ("New York", "internal-102"),
+        ],
+    )
+
+    control.input_value.return_value = "internal-101"
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.field_type == FormFieldType.SELECT
+    assert field.control_kind == FormControlKind.NATIVE_SELECT
+
+    assert field.options == [
+        "Seattle",
+        "New York",
+    ]
+
+    assert [
+        (option.label, option.value)
+        for option in field.option_details
+    ] == [
+        ("Seattle", "internal-101"),
+        ("New York", "internal-102"),
+    ]
+
+    assert field.current_value == "Seattle"
+
+def test_native_select_current_value_missing_mapping_fails_closed() -> None:
+    control = make_control(
+        tag_name="select",
+        attributes={
+            "id": "location",
+            "name": "location",
+        },
+        options=[
+            ("Seattle", "internal-101"),
+            ("New York", "internal-102"),
+        ],
+    )
+
+    control.input_value.return_value = "stale-native-value"
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.field_type == FormFieldType.SELECT
+    assert field.control_kind == FormControlKind.NATIVE_SELECT
+
+    assert field.options == [
+        "Seattle",
+        "New York",
+    ]
+
+    assert field.current_value is None
+
+def test_native_select_current_value_ambiguous_mapping_fails_closed() -> None:
+    control = make_control(
+        tag_name="select",
+        attributes={
+            "id": "location",
+            "name": "location",
+        },
+        options=[
+            ("Seattle", "internal-101"),
+            ("Seattle Metro", "internal-101"),
+        ],
+    )
+
+    control.input_value.return_value = "internal-101"
+
+    page = make_page([control])
+    session = make_browser_session(page)
+
+    adapter = GreenhouseFormAdapter(
+        job_url=(
+            "https://job-boards.greenhouse.io/"
+            "example/jobs/123"
+        ),
+        browser_session=session,
+    )
+
+    form = adapter.inspect()
+
+    assert len(form.fields) == 1
+
+    field = form.fields[0]
+
+    assert field.field_type == FormFieldType.SELECT
+    assert field.control_kind == FormControlKind.NATIVE_SELECT
+
+    assert [
+        (option.label, option.value)
+        for option in field.option_details
+    ] == [
+        ("Seattle", "internal-101"),
+        ("Seattle Metro", "internal-101"),
+    ]
+
+    assert field.current_value is None

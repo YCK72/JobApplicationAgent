@@ -18,6 +18,22 @@ class FormFieldType(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class FormControlKind(str, Enum):
+    """
+    Inspected browser-control implementation kind.
+
+    This metadata describes how a semantic application field was
+    represented in the inspected DOM. It does not authorize browser
+    mutation.
+    """
+
+    NATIVE_INPUT = "NATIVE_INPUT"
+    NATIVE_TEXTAREA = "NATIVE_TEXTAREA"
+    NATIVE_SELECT = "NATIVE_SELECT"
+    CUSTOM_COMBOBOX = "CUSTOM_COMBOBOX"
+    UNKNOWN = "UNKNOWN"
+
+
 class FormFieldOption(BaseModel):
     """
     One inspected selectable option.
@@ -38,6 +54,13 @@ class FormField(BaseModel):
     """
     ATS-independent representation of one application field.
 
+    field_type describes the semantic application-field type.
+
+    control_kind separately describes how that field was represented in
+    the inspected browser DOM. For example, both a native HTML SELECT and
+    a custom ARIA combobox may have field_type=SELECT while having
+    different control_kind values.
+
     options preserves the human-visible semantic option labels used by
     deterministic answer resolution and planning.
 
@@ -54,6 +77,8 @@ class FormField(BaseModel):
     label: str = Field(min_length=1)
 
     field_type: FormFieldType = FormFieldType.UNKNOWN
+
+    control_kind: FormControlKind = FormControlKind.UNKNOWN
 
     required: bool = False
 

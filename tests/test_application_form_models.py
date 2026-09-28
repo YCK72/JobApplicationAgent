@@ -6,6 +6,12 @@ from app.applications.form_models import (
     FormField,
     FormFieldType,
 )
+from app.applications.form_models import (
+    FormControlKind,
+    FormField,
+    FormFieldOption,
+    FormFieldType,
+)
 
 
 def test_create_text_field():
@@ -206,3 +212,26 @@ def test_form_field_option_preserves_distinct_label_and_native_value() -> None:
 
     assert option.label == "Remote"
     assert option.value == "internal-option-101"
+
+def test_form_field_defaults_to_unknown_control_kind() -> None:
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+    )
+
+    assert field.control_kind == FormControlKind.UNKNOWN
+
+
+def test_form_field_preserves_inspected_control_kind() -> None:
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.CUSTOM_COMBOBOX,
+    )
+
+    assert (
+        field.control_kind
+        == FormControlKind.CUSTOM_COMBOBOX
+    )

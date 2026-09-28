@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.applications.form_models import (
+    FormControlKind,
     FormField,
     FormFieldOption,
     FormFieldType,
@@ -54,18 +55,28 @@ def make_select_field(
     label: str = "Country",
     options: list[str] | None = None,
 ) -> FormField:
+    resolved_options = (
+        options
+        if options is not None
+        else [
+            "United States",
+            "Canada",
+        ]
+    )
+
     return FormField(
         field_id=field_id,
         label=label,
         field_type=FormFieldType.SELECT,
-        options=(
-            options
-            if options is not None
-            else [
-                "United States",
-                "Canada",
-            ]
-        ),
+        control_kind=FormControlKind.NATIVE_SELECT,
+        options=resolved_options,
+        option_details=[
+            FormFieldOption(
+                label=option,
+                value=option,
+            )
+            for option in resolved_options
+        ],
     )
 
 def make_radio_field(
@@ -309,6 +320,11 @@ def test_native_select_uses_exact_inspected_option_label():
     locator = MagicMock()
     locator.count.return_value = 1
     locator.evaluate.return_value = "SELECT"
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 1
+    locator.locator.return_value = option_locator
+
     page.locator.return_value = locator
 
     writer = PlaywrightFieldWriter(page)
@@ -335,7 +351,7 @@ def test_native_select_uses_exact_inspected_option_label():
     )
 
     locator.select_option.assert_called_once_with(
-        label="United States"
+        value="United States"
     )
 
     locator.fill.assert_not_called()
@@ -350,6 +366,10 @@ def test_select_uses_name_when_id_does_not_exist():
     )
 
     name_locator.evaluate.return_value = "SELECT"
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 1
+    name_locator.locator.return_value = option_locator
 
     writer = PlaywrightFieldWriter(page)
 
@@ -376,7 +396,7 @@ def test_select_uses_name_when_id_does_not_exist():
     )
 
     name_locator.select_option.assert_called_once_with(
-        label="United States"
+        value="United States"
     )
 
 
@@ -634,6 +654,11 @@ def test_select_accepts_case_insensitive_native_tag_name():
     locator = MagicMock()
     locator.count.return_value = 1
     locator.evaluate.return_value = "select"
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 1
+    locator.locator.return_value = option_locator
+
     page.locator.return_value = locator
 
     writer = PlaywrightFieldWriter(page)
@@ -644,7 +669,7 @@ def test_select_accepts_case_insensitive_native_tag_name():
     )
 
     locator.select_option.assert_called_once_with(
-        label="United States"
+        value="United States"
     )
 
 
@@ -1880,3 +1905,283 @@ def test_radio_uses_exact_case_sensitive_semantic_matching() -> None:
         )
 
     page.locator.assert_not_called()
+
+def test_custom_combobox_cannot_use_native_select_execution() -> None:
+    page = MagicMock()
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="question_123",
+        label="Preferred location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.CUSTOM_COMBOBOX,
+        options=["Seattle"],
+    )
+
+    try:
+        writer.select_option(
+            field=field,
+            value="Seattle",
+        )
+    except PlaywrightFieldWriterError as exc:
+        assert "native select" in str(exc).lower()
+    else:
+        raise AssertionError(
+            "Expected custom combobox execution to be rejected."
+        )
+
+    page.locator.assert_not_called()
+
+def test_native_select_uses_inspected_native_value_mapping() -> None:
+    page = MagicMock()
+    locator = MagicMock()
+
+    page.locator.return_value = locator
+    locator.count.return_value = 1
+    locator.evaluate.return_value = "SELECT"
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 1
+    locator.locator.return_value = option_locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.NATIVE_SELECT,
+        options=[
+            "Seattle",
+            "New York",
+        ],
+        option_details=[
+            FormFieldOption(
+                label="Seattle",
+                value="internal-101",
+            ),
+            FormFieldOption(
+                label="New York",
+                value="internal-102",
+            ),
+        ],
+    )
+
+    writer.select_option(
+        field=field,
+        value="Seattle",
+    )
+
+    locator.select_option.assert_called_once_with(
+        value="internal-101"
+    )
+
+def test_native_select_rejects_missing_native_value_mapping() -> None:
+    page = MagicMock()
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.NATIVE_SELECT,
+        options=["Seattle"],
+        option_details=[],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected native-value mapping",
+    ):
+        writer.select_option(
+            field=field,
+            value="Seattle",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_native_select_rejects_ambiguous_native_value_mapping() -> None:
+    page = MagicMock()
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.NATIVE_SELECT,
+        options=["Seattle"],
+        option_details=[
+            FormFieldOption(
+                label="Seattle",
+                value="internal-101",
+            ),
+            FormFieldOption(
+                label="Seattle",
+                value="internal-999",
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected native-value mapping",
+    ):
+        writer.select_option(
+            field=field,
+            value="Seattle",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_native_select_semantic_matching_is_case_sensitive() -> None:
+    page = MagicMock()
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.NATIVE_SELECT,
+        options=["Seattle"],
+        option_details=[
+            FormFieldOption(
+                label="Seattle",
+                value="internal-101",
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected option",
+    ):
+        writer.select_option(
+            field=field,
+            value="seattle",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_native_select_rejects_duplicate_semantic_options() -> None:
+    page = MagicMock()
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.NATIVE_SELECT,
+        options=[
+            "Seattle",
+            "Seattle",
+        ],
+        option_details=[
+            FormFieldOption(
+                label="Seattle",
+                value="internal-101",
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected option",
+    ):
+        writer.select_option(
+            field=field,
+            value="Seattle",
+        )
+
+    page.locator.assert_not_called()
+
+def test_native_select_rejects_stale_native_value_without_mutation() -> None:
+    page = MagicMock()
+
+    select_locator = MagicMock()
+    select_locator.count.return_value = 1
+    select_locator.evaluate.return_value = "SELECT"
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 0
+
+    page.locator.return_value = select_locator
+    select_locator.locator.return_value = option_locator
+
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.NATIVE_SELECT,
+        options=["Seattle"],
+        option_details=[
+            FormFieldOption(
+                label="Seattle",
+                value="internal-101",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="native value did not resolve to exactly one option",
+    ):
+        writer.select_option(
+            field=field,
+            value="Seattle",
+        )
+
+    select_locator.locator.assert_called_once_with(
+        'option[value="internal-101"]'
+    )
+
+    select_locator.select_option.assert_not_called()
+
+def test_native_select_rejects_ambiguous_native_value_without_mutation() -> None:
+    page = MagicMock()
+
+    select_locator = MagicMock()
+    select_locator.count.return_value = 1
+    select_locator.evaluate.return_value = "SELECT"
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 2
+
+    page.locator.return_value = select_locator
+    select_locator.locator.return_value = option_locator
+
+    field = FormField(
+        field_id="location",
+        label="Location",
+        field_type=FormFieldType.SELECT,
+        control_kind=FormControlKind.NATIVE_SELECT,
+        options=["Seattle"],
+        option_details=[
+            FormFieldOption(
+                label="Seattle",
+                value="internal-101",
+            ),
+        ],
+    )
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="native value did not resolve to exactly one option",
+    ):
+        writer.select_option(
+            field=field,
+            value="Seattle",
+        )
+
+    select_locator.select_option.assert_not_called()

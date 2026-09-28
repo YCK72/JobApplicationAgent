@@ -8,6 +8,7 @@ from app.applications.form_models import (
     FormField,
     FormFieldOption,
     FormFieldType,
+    FormControlKind,
 )
 from app.browser.form_writer import BrowserFieldWriter
 
@@ -87,23 +88,31 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
         locator.fill(value)
 
     def select_option(
-        self,
-        field: FormField,
-        value: str,
+            self,
+            field: FormField,
+            value: str,
     ) -> None:
         """
-        Select one exact inspected option on a native SELECT control.
+        Select one exact inspected option from a native HTML SELECT.
 
-        The requested value must already be the exact option text preserved
-        by deterministic form analysis. No fuzzy matching, aliases,
-        abbreviations, or browser-side guessing are permitted.
+        The requested value is the human-visible semantic option label
+        already resolved by deterministic planning.
 
-        The resolved browser control is revalidated immediately before
-        mutation and must still be an actual native HTML SELECT element.
+        Execution requires an exact and unique mapping from that semantic
+        label to the provider/browser value captured during inspection.
+
+        Custom comboboxes are explicitly rejected. Missing, ambiguous, or
+        stale mappings fail closed rather than falling back to label-based
+        browser inference.
         """
         if field.field_type != FormFieldType.SELECT:
             raise PlaywrightFieldWriterError(
                 "Field type is not supported for option selection."
+            )
+
+        if field.control_kind == FormControlKind.CUSTOM_COMBOBOX:
+            raise PlaywrightFieldWriterError(
+                "CUSTOM_COMBOBOX cannot use native SELECT execution."
             )
 
         self._validate_string_value(value)
@@ -113,27 +122,49 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
                 "SELECT field has no inspected options."
             )
 
-        matches = [
+        semantic_matches = [
             option
             for option in field.options
             if option == value
         ]
 
-        if len(matches) != 1:
+        if len(semantic_matches) != 1:
             raise PlaywrightFieldWriterError(
                 "SELECT value does not identify exactly one inspected option."
             )
 
-        locator = self._resolve_locator(field)
+        native_matches = [
+            option
+            for option in field.option_details
+            if option.label == value
+        ]
 
-        if locator.count() != 1:
+        if len(native_matches) != 1:
             raise PlaywrightFieldWriterError(
-                "Field identifier did not resolve to exactly one control."
+                "SELECT option must have exactly one inspected "
+                "native-value mapping."
             )
+
+        native_value = native_matches[0].value
+
+        self._validate_string_value(native_value)
+
+        locator = self._resolve_locator(field)
 
         self._validate_native_select(locator)
 
-        locator.select_option(label=value)
+        option_locator = locator.locator(
+            f'option[value="{self._css_escape(native_value)}"]'
+        )
+
+        if option_locator.count() != 1:
+            raise PlaywrightFieldWriterError(
+                "SELECT native value did not resolve to exactly one option."
+            )
+
+        locator.select_option(
+            value=native_value
+        )
 
     def select_radio_option(
             self,
