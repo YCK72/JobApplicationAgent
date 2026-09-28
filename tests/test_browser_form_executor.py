@@ -201,28 +201,33 @@ def test_unsupported_field_type_never_reaches_writer():
     writer.select_option.assert_not_called()
 
 
-def test_external_file_field_never_reaches_writer():
+def test_external_resume_file_reaches_writer():
     writer = make_writer()
     executor = BrowserFormExecutor(writer)
 
+    field = make_field(
+        "resume",
+        "Resume",
+        FormFieldType.FILE,
+    )
+
     plan = make_plan(
         make_action(
-            field=make_field(
-                "resume",
-                "Resume",
-                FormFieldType.FILE,
-            ),
+            field=field,
             value="resume.pdf",
         )
     )
 
     result = execute(executor, plan)
 
-    assert result.status == BrowserExecutionStatus.BLOCKED
-    assert result.completed_actions == 0
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
     assert result.may_submit is False
 
-    writer.write_text.assert_not_called()
+    writer.upload_file.assert_called_once_with(
+        field=field,
+        file_path="resume.pdf",
+    )
 
 
 def test_writer_failure_stops_execution():
@@ -971,13 +976,13 @@ def test_local_fixture_file_reaches_writer(
     writer.select_option.assert_not_called()
 
 
-def test_external_file_remains_blocked():
+def test_external_non_resume_file_remains_blocked():
     writer = make_writer()
     executor = BrowserFormExecutor(writer)
 
     field = FormField(
-        field_id="resume",
-        label="Resume",
+        field_id="cover_letter",
+        label="Cover Letter",
         field_type=FormFieldType.FILE,
     )
 
@@ -995,5 +1000,3 @@ def test_external_file_remains_blocked():
     assert result.may_submit is False
 
     writer.upload_file.assert_not_called()
-    writer.write_text.assert_not_called()
-    writer.select_option.assert_not_called()

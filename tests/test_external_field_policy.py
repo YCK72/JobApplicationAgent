@@ -333,3 +333,90 @@ def test_review_or_unknown_select_remains_blocked(
     assert result.status == ExternalFieldPolicyStatus.BLOCKED
     assert result.may_mutate is False
     assert result.may_submit is False
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Resume",
+        "resume",
+        "  Resume  ",
+        "CV",
+        "cv",
+        "Curriculum Vitae",
+        "  curriculum   vitae  ",
+    ],
+)
+def test_explicit_resume_file_field_is_allowed(
+    policy: ExternalFieldExecutionPolicy,
+    label: str,
+):
+    result = policy.authorize(
+        make_action(
+            label,
+            field_type=FormFieldType.FILE,
+            value="C:/verified/resume.pdf",
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.ALLOWED
+    assert result.may_mutate is True
+    assert result.may_submit is False
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Cover Letter",
+        "Transcript",
+        "Supporting Document",
+        "Additional Document",
+        "Portfolio",
+        "Attachment",
+        "Upload",
+        "Attach",
+        "Resume Upload",
+        "Upload Resume",
+        "Resume/Cover Letter",
+        "Supporting Resume Document",
+        "First Name",
+    ],
+)
+def test_non_resume_file_field_remains_blocked(
+    policy: ExternalFieldExecutionPolicy,
+    label: str,
+):
+    result = policy.authorize(
+        make_action(
+            label,
+            field_type=FormFieldType.FILE,
+            value="C:/verified/resume.pdf",
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.BLOCKED
+    assert result.may_mutate is False
+    assert result.may_submit is False
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "   ",
+    ],
+)
+def test_resume_file_with_empty_value_is_blocked(
+    policy: ExternalFieldExecutionPolicy,
+    value: str,
+):
+    result = policy.authorize(
+        make_action(
+            "Resume",
+            field_type=FormFieldType.FILE,
+            value=value,
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.BLOCKED
+    assert result.may_mutate is False
+    assert result.may_submit is False

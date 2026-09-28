@@ -51,8 +51,8 @@ class BrowserFormExecutor:
     External SELECT mutation remains prohibited unless the independent
     external field policy explicitly authorizes it.
 
-    External FILE mutation remains prohibited because the independent
-    external field policy does not authorize FILE controls.
+    External FILE mutation remains prohibited unless the independent
+    external field policy explicitly authorizes it.
 
     This executor does not navigate, arbitrarily click controls, bypass
     verification, or submit applications.

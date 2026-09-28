@@ -499,3 +499,89 @@ def test_external_safe_profile_field_reaches_playwright_fill():
     locator.fill.assert_called_once_with(
         "Verified Name"
     )
+
+def test_external_resume_file_reaches_playwright_upload(
+    tmp_path,
+):
+    resume_path = tmp_path / "resume.pdf"
+    resume_path.write_bytes(b"%PDF-1.4 test resume")
+
+    page = make_page()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "file",
+    }
+
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        field_id="resume",
+        label="Resume",
+        field_type=FormFieldType.FILE,
+    )
+
+    plan = make_plan(
+        AuthorizedFieldAction(
+            field=field,
+            value=str(resume_path),
+        )
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    page.locator.assert_called_once_with(
+        '[id="resume"]'
+    )
+
+    locator.set_input_files.assert_called_once_with(
+        str(resume_path.resolve())
+    )
+
+
+def test_external_cover_letter_file_never_reaches_playwright_upload(
+    tmp_path,
+):
+    cover_letter_path = tmp_path / "cover_letter.pdf"
+    cover_letter_path.write_bytes(b"%PDF-1.4 test cover letter")
+
+    page = make_page()
+
+    writer = PlaywrightFieldWriter(page)
+    executor = BrowserFormExecutor(writer)
+
+    field = make_field(
+        field_id="cover_letter",
+        label="Cover Letter",
+        field_type=FormFieldType.FILE,
+    )
+
+    plan = make_plan(
+        AuthorizedFieldAction(
+            field=field,
+            value=str(cover_letter_path),
+        )
+    )
+
+    result = executor.execute(
+        plan,
+        target_authorization=make_target_authorization(),
+    )
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    page.locator.assert_not_called()

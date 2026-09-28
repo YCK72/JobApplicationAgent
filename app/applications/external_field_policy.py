@@ -49,14 +49,20 @@ class ExternalFieldExecutionPolicy:
     verified candidate data. This policy independently rechecks the
     semantic field label immediately before external mutation.
 
-    Only ordinary profile-information questions that are classified SAFE
-    by ApplicationQuestionPolicy and use supported text-like or native
-    SELECT controls may pass.
+    Ordinary profile-information questions may pass only when they are
+    classified SAFE by ApplicationQuestionPolicy and use supported
+    text-like or native SELECT controls.
 
-    Unknown, review, sensitive, manual, and unsupported fields fail closed.
+    FILE controls use a separate, narrower authorization path. Only
+    controls whose semantic label identifies the candidate resume or CV
+    exactly may pass this policy. Other uploads remain blocked.
+
+    Unknown, review, sensitive, manual, and unsupported fields fail
+    closed.
 
     This class does not generate answers, inspect pages, navigate, mutate
-    browser controls, upload files, bypass verification, or submit forms.
+    browser controls, choose files, validate local files, bypass
+    verification, or submit forms.
     """
 
     _SUPPORTED_FIELD_TYPES = {
@@ -65,6 +71,12 @@ class ExternalFieldExecutionPolicy:
         FormFieldType.EMAIL,
         FormFieldType.PHONE,
         FormFieldType.SELECT,
+    }
+
+    _RESUME_FILE_LABELS = {
+        "resume",
+        "cv",
+        "curriculum vitae",
     }
 
     def __init__(
@@ -82,11 +94,6 @@ class ExternalFieldExecutionPolicy:
         action: AuthorizedFieldAction,
     ) -> ExternalFieldPolicyResult:
         field = action.field
-
-        if field.field_type not in self._SUPPORTED_FIELD_TYPES:
-            return self._blocked(
-                "Field type is not permitted for external browser mutation."
-            )
 
         if not isinstance(action.value, str):
             return self._blocked(
@@ -106,6 +113,14 @@ class ExternalFieldExecutionPolicy:
         if not field.label.strip():
             return self._blocked(
                 "External field label is missing."
+            )
+
+        if field.field_type == FormFieldType.FILE:
+            return self._authorize_resume_file(field.label)
+
+        if field.field_type not in self._SUPPORTED_FIELD_TYPES:
+            return self._blocked(
+                "Field type is not permitted for external browser mutation."
             )
 
         try:
@@ -131,6 +146,39 @@ class ExternalFieldExecutionPolicy:
                 "information."
             ),
         )
+
+    def _authorize_resume_file(
+        self,
+        label: str,
+    ) -> ExternalFieldPolicyResult:
+        normalized_label = self._normalize_label(label)
+
+        if normalized_label not in self._RESUME_FILE_LABELS:
+            return self._blocked(
+                "External FILE field is not explicitly identified as "
+                "a resume or CV upload."
+            )
+
+        return ExternalFieldPolicyResult(
+            status=ExternalFieldPolicyStatus.ALLOWED,
+            reason=(
+                "External FILE field is explicitly identified as a "
+                "resume or CV upload."
+            ),
+        )
+
+    @staticmethod
+    def _normalize_label(
+        value: str,
+    ) -> str:
+        """
+        Normalize semantic labels only for conservative exact matching.
+
+        Surrounding whitespace is ignored, internal whitespace is
+        collapsed, and comparison is case-insensitive. No fuzzy,
+        substring, alias expansion, or semantic guessing is performed.
+        """
+        return " ".join(value.split()).casefold()
 
     @staticmethod
     def _blocked(
