@@ -201,7 +201,7 @@ def test_unsupported_field_type_never_reaches_writer():
     writer.select_option.assert_not_called()
 
 
-def test_file_field_never_reaches_writer():
+def test_external_file_field_never_reaches_writer():
     writer = make_writer()
     executor = BrowserFormExecutor(writer)
 
@@ -873,7 +873,6 @@ def test_external_sensitive_select_remains_blocked():
     [
         FormFieldType.RADIO,
         FormFieldType.CHECKBOX,
-        FormFieldType.FILE,
         FormFieldType.UNKNOWN,
     ],
 )
@@ -902,5 +901,99 @@ def test_non_select_non_text_controls_remain_blocked(
     assert result.completed_actions == 0
     assert result.may_submit is False
 
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
+
+def test_local_fixture_file_reaches_writer(
+    tmp_path,
+):
+    fixture_path = tmp_path / "safe_application_form.html"
+    fixture_path.write_text(
+        "<html></html>",
+        encoding="utf-8",
+    )
+
+    resume_path = tmp_path / "resume.pdf"
+    resume_path.write_bytes(b"%PDF-1.4 test")
+
+    fixture_url = fixture_path.resolve().as_uri()
+
+    writer = MagicMock()
+    writer.current_url = fixture_url
+
+    external_policy = MagicMock()
+
+    executor = BrowserFormExecutor(
+        writer,
+        external_field_policy=external_policy,
+    )
+
+    field = FormField(
+        field_id="resume",
+        label="Resume",
+        field_type=FormFieldType.FILE,
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value=str(resume_path),
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Controlled local FILE fixture.",
+    )
+
+    guard = ExternalExecutionGuard(
+        allowed_local_fixture=fixture_path,
+    )
+
+    authorization = guard.authorize(fixture_url)
+
+    result = executor.execute(
+        plan,
+        target_authorization=authorization,
+    )
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    external_policy.authorize.assert_not_called()
+
+    writer.upload_file.assert_called_once_with(
+        field=field,
+        file_path=str(resume_path),
+    )
+
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
+
+
+def test_external_file_remains_blocked():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = FormField(
+        field_id="resume",
+        label="Resume",
+        field_type=FormFieldType.FILE,
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="data/resumes/resume.pdf",
+    )
+
+    plan = make_plan(action)
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.upload_file.assert_not_called()
     writer.write_text.assert_not_called()
     writer.select_option.assert_not_called()

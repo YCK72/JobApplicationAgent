@@ -12,7 +12,7 @@ class BrowserFieldWriter(ABC):
     Implementations may expose the current browser target URL and may
     mutate only explicitly identified, previously authorized fields.
 
-    This interface does not expose navigation, clicking, file uploads,
+    This interface does not expose navigation, arbitrary clicking,
     submission, or arbitrary page access.
     """
 
@@ -46,5 +46,20 @@ class BrowserFieldWriter(ABC):
 
         This method does not authorize the field itself. Authorization must
         already have occurred before this browser-mutation boundary.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def upload_file(
+        self,
+        field: FormField,
+        file_path: str,
+    ) -> None:
+        """
+        Attach one previously authorized local file to one FILE field.
+
+        This method does not select or authorize the file. Upstream policy
+        and routing must already have chosen the exact file path before this
+        browser-mutation boundary.
         """
         raise NotImplementedError

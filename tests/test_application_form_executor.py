@@ -204,25 +204,31 @@ def test_verified_select_field_is_authorized():
     assert result.actions[0].value == "United States"
 
 
-def test_file_field_is_never_authorized_by_current_executor():
+def test_file_field_is_authorized_for_controlled_execution():
     executor = ApplicationFormExecutor()
+
+    field = make_field(
+        "resume",
+        "Resume",
+        FormFieldType.FILE,
+    )
 
     plan = make_plan(
         make_field_plan(
-            field=make_field(
-                "resume",
-                "Resume",
-                FormFieldType.FILE,
-            ),
+            field=field,
             value="resume.pdf",
         )
     )
 
     result = executor.authorize(plan)
 
-    assert result.status == ExecutionPlanStatus.BLOCKED
-    assert result.actions == ()
+    assert result.status == ExecutionPlanStatus.AUTHORIZED
+    assert result.may_execute is True
+    assert result.may_submit is False
+    assert len(result.actions) == 1
 
+    assert result.actions[0].field == field
+    assert result.actions[0].value == "resume.pdf"
 
 def test_empty_auto_fill_plan_is_authorized_but_cannot_submit():
     executor = ApplicationFormExecutor()

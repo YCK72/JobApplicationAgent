@@ -662,3 +662,215 @@ def test_select_rejects_dom_tag_inspection_failure():
         )
 
     locator.select_option.assert_not_called()
+
+def test_native_file_input_uploads_exact_pdf(tmp_path):
+    resume_path = tmp_path / "resume.pdf"
+    resume_path.write_bytes(b"%PDF-1.4 test")
+
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "file",
+    }
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_field(
+        field_id="resume",
+        label="Resume",
+        field_type=FormFieldType.FILE,
+    )
+
+    writer.upload_file(
+        field,
+        str(resume_path),
+    )
+
+    page.locator.assert_called_once_with(
+        '[id="resume"]'
+    )
+
+    locator.evaluate.assert_called_once()
+
+    locator.set_input_files.assert_called_once_with(
+        str(resume_path.resolve())
+    )
+
+    locator.fill.assert_not_called()
+    locator.select_option.assert_not_called()
+
+
+def test_file_upload_rejects_non_file_field(tmp_path):
+    resume_path = tmp_path / "resume.pdf"
+    resume_path.write_bytes(b"%PDF-1.4 test")
+
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="not supported for file upload",
+    ):
+        writer.upload_file(
+            make_field(field_type=FormFieldType.TEXT),
+            str(resume_path),
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_file_upload_rejects_missing_file(tmp_path):
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    missing_path = tmp_path / "missing.pdf"
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="could not be safely resolved",
+    ):
+        writer.upload_file(
+            make_field(
+                field_id="resume",
+                label="Resume",
+                field_type=FormFieldType.FILE,
+            ),
+            str(missing_path),
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_file_upload_rejects_non_pdf(tmp_path):
+    document_path = tmp_path / "resume.txt"
+    document_path.write_text(
+        "not a resume pdf",
+        encoding="utf-8",
+    )
+
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="Only PDF files",
+    ):
+        writer.upload_file(
+            make_field(
+                field_id="resume",
+                label="Resume",
+                field_type=FormFieldType.FILE,
+            ),
+            str(document_path),
+        )
+
+    page.locator.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("tag_name", "input_type"),
+    [
+        ("DIV", "file"),
+        ("INPUT", "text"),
+        ("BUTTON", "button"),
+        ("SELECT", "select-one"),
+    ],
+)
+def test_file_upload_rejects_non_native_file_controls(
+    tmp_path,
+    tag_name: str,
+    input_type: str,
+):
+    resume_path = tmp_path / "resume.pdf"
+    resume_path.write_bytes(b"%PDF-1.4 test")
+
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = {
+        "tagName": tag_name,
+        "type": input_type,
+    }
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="not a native HTML file input",
+    ):
+        writer.upload_file(
+            make_field(
+                field_id="resume",
+                label="Resume",
+                field_type=FormFieldType.FILE,
+            ),
+            str(resume_path),
+        )
+
+    locator.set_input_files.assert_not_called()
+
+
+def test_file_upload_rejects_unverifiable_dom_control(tmp_path):
+    resume_path = tmp_path / "resume.pdf"
+    resume_path.write_bytes(b"%PDF-1.4 test")
+
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.return_value = None
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="could not be safely verified",
+    ):
+        writer.upload_file(
+            make_field(
+                field_id="resume",
+                label="Resume",
+                field_type=FormFieldType.FILE,
+            ),
+            str(resume_path),
+        )
+
+    locator.set_input_files.assert_not_called()
+
+
+def test_file_upload_rejects_dom_inspection_failure(tmp_path):
+    resume_path = tmp_path / "resume.pdf"
+    resume_path.write_bytes(b"%PDF-1.4 test")
+
+    page = MagicMock()
+
+    locator = MagicMock()
+    locator.count.return_value = 1
+    locator.evaluate.side_effect = RuntimeError(
+        "DOM inspection failed"
+    )
+    page.locator.return_value = locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="could not be safely verified",
+    ):
+        writer.upload_file(
+            make_field(
+                field_id="resume",
+                label="Resume",
+                field_type=FormFieldType.FILE,
+            ),
+            str(resume_path),
+        )
+
+    locator.set_input_files.assert_not_called()

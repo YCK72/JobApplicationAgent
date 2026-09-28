@@ -45,13 +45,17 @@ class BrowserFormExecutor:
 
     Local controlled fixture execution may perform:
     - verified text-like mutation,
-    - deterministic native SELECT mutation.
+    - deterministic native SELECT mutation,
+    - controlled native FILE attachment.
 
     External SELECT mutation remains prohibited unless the independent
     external field policy explicitly authorizes it.
 
-    This executor does not navigate, arbitrarily click controls, upload
-    files, bypass verification, or submit applications.
+    External FILE mutation remains prohibited because the independent
+    external field policy does not authorize FILE controls.
+
+    This executor does not navigate, arbitrarily click controls, bypass
+    verification, or submit applications.
     """
 
     _TEXT_FIELD_TYPES = {
@@ -65,6 +69,7 @@ class BrowserFormExecutor:
         _TEXT_FIELD_TYPES
         | {
             FormFieldType.SELECT,
+            FormFieldType.FILE,
         }
     )
 
@@ -202,6 +207,13 @@ class BrowserFormExecutor:
             self._writer.select_option(
                 field=action.field,
                 value=action.value,
+            )
+            return
+
+        if action.field.field_type == FormFieldType.FILE:
+            self._writer.upload_file(
+                field=action.field,
+                file_path=action.value,
             )
             return
 

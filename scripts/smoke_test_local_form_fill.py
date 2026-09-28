@@ -33,6 +33,12 @@ FIXTURE_PATH = (
     / "safe_application_form.html"
 )
 
+RESUME_DIRECTORY = (
+    PROJECT_ROOT
+    / "data"
+    / "resumes"
+)
+
 
 def make_field(
     field_id: str,
@@ -49,11 +55,43 @@ def make_field(
     )
 
 
+def find_smoke_test_resume() -> Path:
+    """
+    Select one existing local PDF deterministically for the controlled
+    browser smoke test.
+
+    This helper is test infrastructure only. Production resume selection
+    remains the responsibility of the resume-routing layer.
+    """
+    if not RESUME_DIRECTORY.is_dir():
+        raise RuntimeError(
+            f"Resume directory does not exist: {RESUME_DIRECTORY}"
+        )
+
+    resume_candidates = sorted(
+        (
+            path.resolve()
+            for path in RESUME_DIRECTORY.glob("*.pdf")
+            if path.is_file()
+        ),
+        key=lambda path: path.name.casefold(),
+    )
+
+    if not resume_candidates:
+        raise RuntimeError(
+            "No PDF resume is available for the controlled smoke test."
+        )
+
+    return resume_candidates[0]
+
+
 def main() -> None:
     if not FIXTURE_PATH.is_file():
         raise RuntimeError(
             f"Fixture does not exist: {FIXTURE_PATH}"
         )
+
+    resume_path = find_smoke_test_resume()
 
     fixture_url = FIXTURE_PATH.resolve().as_uri()
 
@@ -107,6 +145,11 @@ def main() -> None:
                 "Canada",
             ],
         ),
+        make_field(
+            "resume",
+            "Resume",
+            FormFieldType.FILE,
+        ),
     )
 
     values = (
@@ -115,6 +158,7 @@ def main() -> None:
         "555-0100",
         "Controlled local smoke test.",
         "United States",
+        str(resume_path),
     )
 
     actions = tuple(
@@ -151,9 +195,9 @@ def main() -> None:
                 f"Execution failed: {result.reason}"
             )
 
-        if result.completed_actions != 5:
+        if result.completed_actions != 6:
             raise RuntimeError(
-                "Expected exactly five completed actions."
+                "Expected exactly six completed actions."
             )
 
         if result.may_submit:
@@ -198,13 +242,34 @@ def main() -> None:
                 "visible option label."
             )
 
-        resume_value = page.locator(
-            "#resume"
-        ).input_value()
+        resume = page.locator("#resume")
 
-        if resume_value != "":
+        attached_file = resume.evaluate(
+            """element => {
+                if (!element.files || element.files.length !== 1) {
+                    return null;
+                }
+
+                return {
+                    name: element.files[0].name,
+                    size: element.files[0].size
+                };
+            }"""
+        )
+
+        if not isinstance(attached_file, dict):
             raise RuntimeError(
-                "Resume input was unexpectedly modified."
+                "Resume input does not contain exactly one attached file."
+            )
+
+        if attached_file.get("name") != resume_path.name:
+            raise RuntimeError(
+                "Attached resume filename does not match the expected file."
+            )
+
+        if attached_file.get("size") != resume_path.stat().st_size:
+            raise RuntimeError(
+                "Attached resume size does not match the expected file."
             )
 
         submission_count = page.evaluate(
@@ -228,7 +293,9 @@ def main() -> None:
             "Country select: United States "
             "(native value US)"
         )
-        print("Resume upload: untouched")
+        print(
+            "Resume upload: exactly one expected local PDF attached"
+        )
         print("Form submission: not triggered")
 
 

@@ -68,14 +68,16 @@ class ApplicationFormExecutor:
 
     Supported actions remain narrowly scoped to:
     - verified text-like values,
-    - deterministically resolved native SELECT values.
+    - deterministically resolved native SELECT values,
+    - previously selected FILE paths for controlled execution.
 
     This class performs authorization only. It does not fill fields,
-    select options, click controls, upload files, press keys, bypass
+    select options, attach files, click controls, press keys, bypass
     verification, or submit applications.
 
     External targets receive additional execution-time policy checks
-    before mutation.
+    before mutation. FILE mutation therefore remains blocked externally
+    unless an independent external policy explicitly authorizes it.
 
     Unknown, unsupported, review, and manual cases fail closed.
     """
@@ -86,6 +88,7 @@ class ApplicationFormExecutor:
         FormFieldType.EMAIL,
         FormFieldType.PHONE,
         FormFieldType.SELECT,
+        FormFieldType.FILE,
     }
 
     def authorize(

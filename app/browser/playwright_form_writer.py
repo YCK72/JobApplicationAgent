@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from playwright.sync_api import Page
 
 from app.applications.form_models import (
@@ -23,12 +25,17 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
 
     It supports:
     - text-like field filling,
-    - native SELECT mutation using an exact verified option label.
+    - native SELECT mutation using an exact verified option label,
+    - one authorized local PDF attachment on a native file input.
 
     SELECT execution fails closed unless the resolved browser control is
     still an actual native HTML SELECT element at mutation time.
 
-    It exposes no navigation, arbitrary clicking, file upload, keyboard,
+    FILE execution fails closed unless the resolved browser control is
+    still an actual native HTML INPUT element with type=file at mutation
+    time.
+
+    It exposes no navigation, arbitrary clicking, keyboard interaction,
     verification-bypass, or submission operations.
     """
 
@@ -122,6 +129,58 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
 
         locator.select_option(label=value)
 
+    def upload_file(
+        self,
+        field: FormField,
+        file_path: str,
+    ) -> None:
+        """
+        Attach one exact local PDF to a native INPUT[type=file] control.
+
+        The exact path must already have been selected and authorized by an
+        upstream deterministic layer. This method does not search for,
+        choose, substitute, or infer a resume.
+
+        The local path and the resolved DOM control are both revalidated
+        immediately before mutation.
+        """
+        if field.field_type != FormFieldType.FILE:
+            raise PlaywrightFieldWriterError(
+                "Field type is not supported for file upload."
+            )
+
+        self._validate_string_value(file_path)
+
+        path = Path(file_path).expanduser()
+
+        try:
+            resolved_path = path.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise PlaywrightFieldWriterError(
+                "Upload file could not be safely resolved."
+            ) from exc
+
+        if not resolved_path.is_file():
+            raise PlaywrightFieldWriterError(
+                "Upload path does not identify a regular file."
+            )
+
+        if resolved_path.suffix.casefold() != ".pdf":
+            raise PlaywrightFieldWriterError(
+                "Only PDF files are supported for controlled upload."
+            )
+
+        locator = self._resolve_locator(field)
+
+        if locator.count() != 1:
+            raise PlaywrightFieldWriterError(
+                "Field identifier did not resolve to exactly one control."
+            )
+
+        self._validate_native_file_input(locator)
+
+        locator.set_input_files(str(resolved_path))
+
     @staticmethod
     def _validate_native_select(
         locator,
@@ -151,6 +210,46 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
         if tag_name.strip().casefold() != "select":
             raise PlaywrightFieldWriterError(
                 "Resolved SELECT field is not a native HTML select control."
+            )
+
+    @staticmethod
+    def _validate_native_file_input(
+        locator,
+    ) -> None:
+        """
+        Require the resolved browser control to be INPUT[type=file].
+        """
+        try:
+            control = locator.evaluate(
+                """element => ({
+                    tagName: element.tagName,
+                    type: element.type
+                })"""
+            )
+        except Exception as exc:
+            raise PlaywrightFieldWriterError(
+                "FILE control type could not be safely verified."
+            ) from exc
+
+        if not isinstance(control, dict):
+            raise PlaywrightFieldWriterError(
+                "FILE control type could not be safely verified."
+            )
+
+        tag_name = control.get("tagName")
+        input_type = control.get("type")
+
+        if not isinstance(tag_name, str) or not isinstance(input_type, str):
+            raise PlaywrightFieldWriterError(
+                "FILE control type could not be safely verified."
+            )
+
+        if (
+            tag_name.strip().casefold() != "input"
+            or input_type.strip().casefold() != "file"
+        ):
+            raise PlaywrightFieldWriterError(
+                "Resolved FILE field is not a native HTML file input."
             )
 
     @staticmethod
