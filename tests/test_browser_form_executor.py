@@ -187,7 +187,7 @@ def test_unsupported_field_type_never_reaches_writer():
             field=make_field(
                 "unsupported",
                 "Unsupported",
-                FormFieldType.RADIO,
+                FormFieldType.CHECKBOX,
             ),
             value="Verified Value",
         )
@@ -201,6 +201,7 @@ def test_unsupported_field_type_never_reaches_writer():
 
     writer.write_text.assert_not_called()
     writer.select_option.assert_not_called()
+    writer.select_radio_option.assert_not_called()
 
 
 def test_external_resume_file_reaches_writer():
@@ -883,7 +884,6 @@ def test_external_sensitive_select_remains_blocked():
 @pytest.mark.parametrize(
     "field_type",
     [
-        FormFieldType.RADIO,
         FormFieldType.CHECKBOX,
         FormFieldType.UNKNOWN,
     ],
@@ -915,6 +915,7 @@ def test_non_select_non_text_controls_remain_blocked(
 
     writer.write_text.assert_not_called()
     writer.select_option.assert_not_called()
+    writer.select_radio_option.assert_not_called()
 
 def test_local_fixture_file_reaches_writer(
     tmp_path,
@@ -1105,4 +1106,81 @@ def test_file_action_without_plan_resume_authorization_is_blocked():
     assert result.completed_actions == 0
     assert result.may_submit is False
 
+    writer.upload_file.assert_not_called()
+
+def test_external_safe_radio_reaches_writer():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = FormField(
+        field_id="country",
+        label="Country",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "United States",
+            "Canada",
+        ],
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="United States",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Verified safe RADIO execution plan.",
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
+    assert result.may_submit is False
+
+    writer.select_radio_option.assert_called_once_with(
+        field=field,
+        value="United States",
+    )
+
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
+    writer.upload_file.assert_not_called()
+
+
+def test_external_sensitive_radio_remains_blocked():
+    writer = make_writer()
+    executor = BrowserFormExecutor(writer)
+
+    field = FormField(
+        field_id="sponsorship",
+        label="Will you require visa sponsorship?",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "Yes",
+            "No",
+        ],
+    )
+
+    action = AuthorizedFieldAction(
+        field=field,
+        value="No",
+    )
+
+    plan = FormExecutionPlan(
+        actions=(action,),
+        status=ExecutionPlanStatus.AUTHORIZED,
+        reason="Forged sensitive RADIO plan.",
+    )
+
+    result = execute(executor, plan)
+
+    assert result.status == BrowserExecutionStatus.BLOCKED
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    writer.select_radio_option.assert_not_called()
+    writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
     writer.upload_file.assert_not_called()

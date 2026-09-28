@@ -50,6 +50,21 @@ class BrowserFieldWriter(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def select_radio_option(
+        self,
+        field: FormField,
+        value: str,
+    ) -> None:
+        """
+        Select one exact verified option from one authorized native RADIO group.
+
+        This method does not authorize the field or infer an answer.
+        Authorization and exact option resolution must already have occurred
+        before this browser-mutation boundary.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def upload_file(
         self,
         field: FormField,

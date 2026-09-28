@@ -26,10 +26,15 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
     It supports:
     - text-like field filling,
     - native SELECT mutation using an exact verified option label,
+    - native RADIO mutation using an exact verified option value,
     - one authorized local PDF attachment on a native file input.
 
     SELECT execution fails closed unless the resolved browser control is
     still an actual native HTML SELECT element at mutation time.
+
+    RADIO execution fails closed unless the resolved browser control is
+    still an actual native HTML INPUT element with type=radio at mutation
+    time.
 
     FILE execution fails closed unless the resolved browser control is
     still an actual native HTML INPUT element with type=file at mutation
@@ -128,6 +133,73 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
         self._validate_native_select(locator)
 
         locator.select_option(label=value)
+
+    def select_radio_option(
+            self,
+            field: FormField,
+            value: str,
+    ) -> None:
+        """
+        Select one exact inspected option from a native RADIO group.
+
+        The requested value must exactly match one option preserved by
+        deterministic form inspection. No fuzzy matching, aliases,
+        abbreviations, or browser-side guessing are permitted.
+
+        The RADIO group is resolved by its inspected field identifier.
+        The requested option is then resolved independently by the exact
+        group name and exact inspected value.
+
+        The matching browser control is revalidated immediately before
+        mutation and must still be an actual native HTML INPUT[type=radio].
+        """
+        if field.field_type != FormFieldType.RADIO:
+            raise PlaywrightFieldWriterError(
+                "Field type is not supported for radio selection."
+            )
+
+        self._validate_string_value(value)
+
+        if not field.options:
+            raise PlaywrightFieldWriterError(
+                "RADIO field has no inspected options."
+            )
+
+        matches = [
+            option
+            for option in field.options
+            if option == value
+        ]
+
+        if len(matches) != 1:
+            raise PlaywrightFieldWriterError(
+                "RADIO value does not identify exactly one inspected option."
+            )
+
+        group_locator = self._resolve_radio_group(field)
+
+        if group_locator.count() < 1:
+            raise PlaywrightFieldWriterError(
+                "Field identifier did not resolve to a radio group."
+            )
+
+        field_id = field.field_id.strip()
+
+        option_locator = self._page.locator(
+            (
+                f'[name="{self._css_escape(field_id)}"]'
+                f'[value="{self._css_escape(value)}"]'
+            )
+        )
+
+        if option_locator.count() != 1:
+            raise PlaywrightFieldWriterError(
+                "RADIO value did not resolve to exactly one browser control."
+            )
+
+        self._validate_native_radio_input(option_locator)
+
+        option_locator.check()
 
     def upload_file(
         self,
@@ -253,6 +325,46 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
             )
 
     @staticmethod
+    def _validate_native_radio_input(
+        locator,
+    ) -> None:
+        """
+        Require the resolved browser control to be INPUT[type=radio].
+        """
+        try:
+            control = locator.evaluate(
+                """element => ({
+                    tagName: element.tagName,
+                    type: element.type
+                })"""
+            )
+        except Exception as exc:
+            raise PlaywrightFieldWriterError(
+                "RADIO control type could not be safely verified."
+            ) from exc
+
+        if not isinstance(control, dict):
+            raise PlaywrightFieldWriterError(
+                "RADIO control type could not be safely verified."
+            )
+
+        tag_name = control.get("tagName")
+        input_type = control.get("type")
+
+        if not isinstance(tag_name, str) or not isinstance(input_type, str):
+            raise PlaywrightFieldWriterError(
+                "RADIO control type could not be safely verified."
+            )
+
+        if (
+            tag_name.strip().casefold() != "input"
+            or input_type.strip().casefold() != "radio"
+        ):
+            raise PlaywrightFieldWriterError(
+                "Resolved RADIO field is not a native HTML radio input."
+            )
+
+    @staticmethod
     def _validate_string_value(
         value: str,
     ) -> None:
@@ -265,6 +377,39 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
             raise PlaywrightFieldWriterError(
                 "Field value must not be empty."
             )
+
+    def _resolve_radio_group(
+        self,
+        field: FormField,
+    ):
+        """
+        Resolve a native RADIO group by its inspected field identifier.
+
+        Unlike ordinary single-control resolution, multiple controls sharing
+        the same name are expected for a RADIO group.
+        """
+        if not isinstance(field.field_id, str):
+            raise PlaywrightFieldWriterError(
+                "Field identifier must be a string."
+            )
+
+        field_id = field.field_id.strip()
+
+        if not field_id:
+            raise PlaywrightFieldWriterError(
+                "Field identifier must not be empty."
+            )
+
+        group_locator = self._page.locator(
+            f'[name="{self._css_escape(field_id)}"]'
+        )
+
+        if group_locator.count() < 1:
+            raise PlaywrightFieldWriterError(
+                "Field identifier could not resolve a radio group."
+            )
+
+        return group_locator
 
     def _resolve_locator(
         self,

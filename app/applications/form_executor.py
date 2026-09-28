@@ -75,6 +75,7 @@ class ApplicationFormExecutor:
     Supported actions remain narrowly scoped to:
     - verified text-like values,
     - deterministically resolved native SELECT values,
+    - deterministically resolved native RADIO values,
     - explicitly authorized resume FILE paths.
 
     FILE actions require an independently supplied resume path and must
@@ -97,6 +98,7 @@ class ApplicationFormExecutor:
         FormFieldType.EMAIL,
         FormFieldType.PHONE,
         FormFieldType.SELECT,
+        FormFieldType.RADIO,
         FormFieldType.FILE,
     }
 

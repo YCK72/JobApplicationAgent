@@ -51,7 +51,7 @@ class ExternalFieldExecutionPolicy:
 
     Ordinary profile-information questions may pass only when they are
     classified SAFE by ApplicationQuestionPolicy and use supported
-    text-like or native SELECT controls.
+    text-like, native SELECT, or native RADIO controls.
 
     FILE controls use a separate, narrower authorization path. Only
     controls whose semantic label identifies the candidate resume or CV
@@ -71,6 +71,7 @@ class ExternalFieldExecutionPolicy:
         FormFieldType.EMAIL,
         FormFieldType.PHONE,
         FormFieldType.SELECT,
+        FormFieldType.RADIO,
     }
 
     _RESUME_FILE_LABELS = {

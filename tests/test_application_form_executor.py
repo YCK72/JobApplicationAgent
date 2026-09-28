@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from app.applications.form_executor import (
     ApplicationFormExecutor,
     ExecutionPlanStatus,
@@ -205,6 +206,36 @@ def test_verified_select_field_is_authorized():
     assert result.actions[0].value == "United States"
 
 
+def test_verified_radio_field_is_authorized():
+    executor = ApplicationFormExecutor()
+
+    field = FormField(
+        field_id="preferred_location",
+        label="Preferred Location",
+        field_type=FormFieldType.RADIO,
+        options=[
+            "Seattle",
+            "New York",
+        ],
+    )
+
+    plan = make_plan(
+        make_field_plan(
+            field=field,
+            value="Seattle",
+        )
+    )
+
+    result = executor.authorize(plan)
+
+    assert result.status == ExecutionPlanStatus.AUTHORIZED
+    assert result.may_execute is True
+    assert result.may_submit is False
+    assert len(result.actions) == 1
+    assert result.actions[0].field == field
+    assert result.actions[0].value == "Seattle"
+
+
 def test_file_field_is_authorized_for_controlled_execution():
     executor = ApplicationFormExecutor()
 
@@ -235,6 +266,7 @@ def test_file_field_is_authorized_for_controlled_execution():
     assert result.actions[0].value == "resume.pdf"
     assert result.authorized_resume_path is not None
 
+
 def test_empty_auto_fill_plan_is_authorized_but_cannot_submit():
     executor = ApplicationFormExecutor()
 
@@ -246,6 +278,7 @@ def test_empty_auto_fill_plan_is_authorized_but_cannot_submit():
     assert result.may_execute is True
     assert result.actions == ()
     assert result.may_submit is False
+
 
 def test_file_action_carries_explicit_resume_authorization():
     executor = ApplicationFormExecutor()

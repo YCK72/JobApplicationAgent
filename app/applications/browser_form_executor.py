@@ -47,14 +47,15 @@ class BrowserFormExecutor:
     Local controlled fixture execution may perform:
     - verified text-like mutation,
     - deterministic native SELECT mutation,
+    - deterministic native RADIO mutation,
     - controlled native FILE attachment.
 
     FILE mutation requires an independently authorized resume path.
     The requested FILE path must resolve to the exact same path
     before browser mutation is allowed.
 
-    External SELECT mutation remains prohibited unless the independent
-    external field policy explicitly authorizes it.
+    External SELECT and RADIO mutation remain prohibited unless the
+    independent external field policy explicitly authorizes them.
 
     External FILE mutation remains prohibited unless the independent
     external field policy explicitly authorizes it.
@@ -74,6 +75,7 @@ class BrowserFormExecutor:
         _TEXT_FIELD_TYPES
         | {
             FormFieldType.SELECT,
+            FormFieldType.RADIO,
             FormFieldType.FILE,
         }
     )
@@ -225,6 +227,13 @@ class BrowserFormExecutor:
 
         if action.field.field_type == FormFieldType.SELECT:
             self._writer.select_option(
+                field=action.field,
+                value=action.value,
+            )
+            return
+
+        if action.field.field_type == FormFieldType.RADIO:
+            self._writer.select_radio_option(
                 field=action.field,
                 value=action.value,
             )

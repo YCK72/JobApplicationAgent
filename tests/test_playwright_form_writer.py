@@ -66,6 +66,25 @@ def make_select_field(
         ),
     )
 
+def make_radio_field(
+    *,
+    field_id: str = "country",
+    label: str = "Country",
+    options: list[str] | None = None,
+) -> FormField:
+    return FormField(
+        field_id=field_id,
+        label=label,
+        field_type=FormFieldType.RADIO,
+        options=(
+            options
+            if options is not None
+            else [
+                "United States",
+                "Canada",
+            ]
+        ),
+    )
 
 @pytest.mark.parametrize(
     "field_type",
@@ -874,3 +893,255 @@ def test_file_upload_rejects_dom_inspection_failure(tmp_path):
         )
 
     locator.set_input_files.assert_not_called()
+
+def test_native_radio_selects_exact_inspected_option():
+    page = MagicMock()
+
+    group_locator = MagicMock()
+    group_locator.count.return_value = 2
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 1
+    option_locator.evaluate.return_value = {
+        "tagName": "INPUT",
+        "type": "radio",
+    }
+
+    page.locator.side_effect = [
+        group_locator,
+        option_locator,
+    ]
+
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_radio_field()
+
+    writer.select_radio_option(
+        field,
+        "United States",
+    )
+
+    assert page.locator.call_args_list[0].args == (
+        '[name="country"]',
+    )
+
+    option_locator.check.assert_called_once_with()
+
+    option_locator.fill.assert_not_called()
+    option_locator.select_option.assert_not_called()
+
+
+def test_radio_rejects_non_radio_field_without_dom_mutation():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="not supported",
+    ):
+        writer.select_radio_option(
+            make_field(
+                field_type=FormFieldType.TEXT,
+            ),
+            "United States",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_radio_rejects_missing_inspected_options():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_radio_field(
+        options=[],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="no inspected options",
+    ):
+        writer.select_radio_option(
+            field,
+            "United States",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_radio_rejects_value_not_in_inspected_options():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected option",
+    ):
+        writer.select_radio_option(
+            make_radio_field(),
+            "US",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_radio_rejects_duplicate_exact_inspected_options():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    field = make_radio_field(
+        options=[
+            "United States",
+            "United States",
+        ],
+    )
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one inspected option",
+    ):
+        writer.select_radio_option(
+            field,
+            "United States",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_radio_rejects_empty_value():
+    page = MagicMock()
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="must not be empty",
+    ):
+        writer.select_radio_option(
+            make_radio_field(),
+            "   ",
+        )
+
+    page.locator.assert_not_called()
+
+
+def test_radio_rejects_missing_group():
+    page = MagicMock()
+
+    group_locator = MagicMock()
+    group_locator.count.return_value = 0
+
+    page.locator.return_value = group_locator
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="radio group",
+    ):
+        writer.select_radio_option(
+            make_radio_field(),
+            "United States",
+        )
+
+    group_locator.check.assert_not_called()
+
+
+def test_radio_rejects_ambiguous_matching_option():
+    page = MagicMock()
+
+    group_locator = MagicMock()
+    group_locator.count.return_value = 2
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 2
+
+    page.locator.side_effect = [
+        group_locator,
+        option_locator,
+    ]
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="exactly one",
+    ):
+        writer.select_radio_option(
+            make_radio_field(),
+            "United States",
+        )
+
+    option_locator.check.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("tag_name", "input_type"),
+    [
+        ("DIV", "radio"),
+        ("INPUT", "checkbox"),
+        ("BUTTON", "button"),
+        ("SELECT", "select-one"),
+    ],
+)
+def test_radio_rejects_non_native_radio_control(
+    tag_name: str,
+    input_type: str,
+):
+    page = MagicMock()
+
+    group_locator = MagicMock()
+    group_locator.count.return_value = 2
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 1
+    option_locator.evaluate.return_value = {
+        "tagName": tag_name,
+        "type": input_type,
+    }
+
+    page.locator.side_effect = [
+        group_locator,
+        option_locator,
+    ]
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="not a native HTML radio input",
+    ):
+        writer.select_radio_option(
+            make_radio_field(),
+            "United States",
+        )
+
+    option_locator.check.assert_not_called()
+
+
+def test_radio_rejects_unverifiable_dom_control():
+    page = MagicMock()
+
+    group_locator = MagicMock()
+    group_locator.count.return_value = 2
+
+    option_locator = MagicMock()
+    option_locator.count.return_value = 1
+    option_locator.evaluate.return_value = None
+
+    page.locator.side_effect = [
+        group_locator,
+        option_locator,
+    ]
+
+    writer = PlaywrightFieldWriter(page)
+
+    with pytest.raises(
+        PlaywrightFieldWriterError,
+        match="could not be safely verified",
+    ):
+        writer.select_radio_option(
+            make_radio_field(),
+            "United States",
+        )
+
+    option_locator.check.assert_not_called()
