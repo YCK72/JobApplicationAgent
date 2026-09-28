@@ -183,11 +183,11 @@ def test_unsupported_field_type_never_reaches_writer():
     plan = make_plan(
         make_action(
             field=make_field(
-                "country",
-                "Country",
-                FormFieldType.SELECT,
+                "unsupported",
+                "Unsupported",
+                FormFieldType.RADIO,
             ),
-            value="United States",
+            value="Verified Value",
         )
     )
 
@@ -198,6 +198,7 @@ def test_unsupported_field_type_never_reaches_writer():
     assert result.may_submit is False
 
     writer.write_text.assert_not_called()
+    writer.select_option.assert_not_called()
 
 
 def test_file_field_never_reaches_writer():
@@ -786,7 +787,7 @@ def test_local_fixture_select_reaches_writer(
     writer.write_text.assert_not_called()
 
 
-def test_external_select_remains_blocked():
+def test_external_safe_select_reaches_writer():
     writer = make_writer()
 
     executor = BrowserFormExecutor(writer)
@@ -809,7 +810,7 @@ def test_external_select_remains_blocked():
     plan = FormExecutionPlan(
         actions=(action,),
         status=ExecutionPlanStatus.AUTHORIZED,
-        reason="Verified SELECT execution plan.",
+        reason="Verified safe SELECT execution plan.",
     )
 
     result = executor.execute(
@@ -817,11 +818,14 @@ def test_external_select_remains_blocked():
         target_authorization=make_target_authorization(),
     )
 
-    assert result.status == BrowserExecutionStatus.BLOCKED
-    assert result.completed_actions == 0
+    assert result.status == BrowserExecutionStatus.COMPLETED
+    assert result.completed_actions == 1
     assert result.may_submit is False
 
-    writer.select_option.assert_not_called()
+    writer.select_option.assert_called_once_with(
+        field=field,
+        value="United States",
+    )
     writer.write_text.assert_not_called()
 
 

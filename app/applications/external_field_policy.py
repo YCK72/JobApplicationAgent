@@ -50,13 +50,13 @@ class ExternalFieldExecutionPolicy:
     semantic field label immediately before external mutation.
 
     Only ordinary profile-information questions that are classified SAFE
-    by ApplicationQuestionPolicy and use supported text-like controls may
-    pass.
+    by ApplicationQuestionPolicy and use supported text-like or native
+    SELECT controls may pass.
 
     Unknown, review, sensitive, manual, and unsupported fields fail closed.
 
-    This class does not generate answers, inspect pages, navigate, click,
-    select options, upload files, bypass verification, or submit forms.
+    This class does not generate answers, inspect pages, navigate, mutate
+    browser controls, upload files, bypass verification, or submit forms.
     """
 
     _SUPPORTED_FIELD_TYPES = {
@@ -64,6 +64,7 @@ class ExternalFieldExecutionPolicy:
         FormFieldType.TEXTAREA,
         FormFieldType.EMAIL,
         FormFieldType.PHONE,
+        FormFieldType.SELECT,
     }
 
     def __init__(
@@ -125,7 +126,7 @@ class ExternalFieldExecutionPolicy:
         return ExternalFieldPolicyResult(
             status=ExternalFieldPolicyStatus.ALLOWED,
             reason=(
-                "External field is a supported text-like control "
+                "External field uses a supported control type and is "
                 "classified as safe ordinary candidate profile "
                 "information."
             ),

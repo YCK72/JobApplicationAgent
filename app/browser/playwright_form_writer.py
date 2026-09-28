@@ -25,6 +25,9 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
     - text-like field filling,
     - native SELECT mutation using an exact verified option label.
 
+    SELECT execution fails closed unless the resolved browser control is
+    still an actual native HTML SELECT element at mutation time.
+
     It exposes no navigation, arbitrary clicking, file upload, keyboard,
     verification-bypass, or submission operations.
     """
@@ -81,6 +84,9 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
         The requested value must already be the exact option text preserved
         by deterministic form analysis. No fuzzy matching, aliases,
         abbreviations, or browser-side guessing are permitted.
+
+        The resolved browser control is revalidated immediately before
+        mutation and must still be an actual native HTML SELECT element.
         """
         if field.field_type != FormFieldType.SELECT:
             raise PlaywrightFieldWriterError(
@@ -112,7 +118,40 @@ class PlaywrightFieldWriter(BrowserFieldWriter):
                 "Field identifier did not resolve to exactly one control."
             )
 
+        self._validate_native_select(locator)
+
         locator.select_option(label=value)
+
+    @staticmethod
+    def _validate_native_select(
+        locator,
+    ) -> None:
+        """
+        Require the resolved browser control to be a native HTML SELECT.
+
+        FormFieldType.SELECT is an ATS-independent semantic type and may also
+        represent custom combobox widgets. Browser mutation is therefore
+        permitted only after checking the actual DOM element at execution
+        time.
+        """
+        try:
+            tag_name = locator.evaluate(
+                "element => element.tagName"
+            )
+        except Exception as exc:
+            raise PlaywrightFieldWriterError(
+                "SELECT control type could not be safely verified."
+            ) from exc
+
+        if not isinstance(tag_name, str):
+            raise PlaywrightFieldWriterError(
+                "SELECT control type could not be safely verified."
+            )
+
+        if tag_name.strip().casefold() != "select":
+            raise PlaywrightFieldWriterError(
+                "Resolved SELECT field is not a native HTML select control."
+            )
 
     @staticmethod
     def _validate_string_value(

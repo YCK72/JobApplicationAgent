@@ -159,7 +159,6 @@ def test_review_or_unknown_field_is_blocked(
 @pytest.mark.parametrize(
     "field_type",
     [
-        FormFieldType.SELECT,
         FormFieldType.RADIO,
         FormFieldType.CHECKBOX,
         FormFieldType.FILE,
@@ -262,12 +261,72 @@ def test_authorization_never_allows_submission(
     assert result.status == ExternalFieldPolicyStatus.ALLOWED
     assert result.may_submit is False
 
-def test_country_select_remains_blocked():
+def test_safe_country_select_is_allowed():
     result = ExternalFieldExecutionPolicy().authorize(
         make_action(
             "Country",
             field_type=FormFieldType.SELECT,
             value="United States",
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.ALLOWED
+    assert result.may_mutate is True
+    assert result.may_submit is False
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Country of citizenship",
+        "What is your citizenship?",
+        "Are you authorized to work in the United States?",
+        "Will you now or in the future require sponsorship?",
+        "What is your visa status?",
+        "What is your gender?",
+        "What is your race?",
+        "What is your ethnicity?",
+        "Are you Hispanic/Latino?",
+        "Do you have a disability?",
+        "What is your veteran status?",
+    ],
+)
+def test_sensitive_select_remains_blocked(
+    policy: ExternalFieldExecutionPolicy,
+    label: str,
+):
+    result = policy.authorize(
+        make_action(
+            label,
+            field_type=FormFieldType.SELECT,
+            value="Forged Value",
+        )
+    )
+
+    assert result.status == ExternalFieldPolicyStatus.BLOCKED
+    assert result.may_mutate is False
+    assert result.may_submit is False
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Working location",
+        "Preferred location",
+        "Preferred working location",
+        "Are you willing to relocate?",
+        "Favorite programming language",
+    ],
+)
+def test_review_or_unknown_select_remains_blocked(
+    policy: ExternalFieldExecutionPolicy,
+    label: str,
+):
+    result = policy.authorize(
+        make_action(
+            label,
+            field_type=FormFieldType.SELECT,
+            value="Forged Value",
         )
     )
 

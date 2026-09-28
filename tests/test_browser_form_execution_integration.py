@@ -193,15 +193,15 @@ def test_unsupported_field_never_reaches_playwright():
     executor = BrowserFormExecutor(writer)
 
     field = make_field(
-        field_id="country",
-        label="Country",
-        field_type=FormFieldType.SELECT,
+        field_id="unsupported",
+        label="Unsupported",
+        field_type=FormFieldType.RADIO,
     )
 
     plan = make_plan(
         AuthorizedFieldAction(
             field=field,
-            value="United States",
+            value="Verified Value",
         )
     )
 
