@@ -56,11 +56,12 @@ regenerated so the dashboard reflects the new state. Human review and manual
 submission remain required. Only the independent submission-confirmation
 service may later record `APPLIED` from supplied evidence.
 
-Greenhouse and Lever are production-composed ATS adapters. Each adapter uses a
-fresh read-only inspection browser and must return a form whose provider and
-exact job location match the selected target. A persisted LinkedIn URL or an
-unsupported ATS cannot fall back to either adapter; it is moved to
-`NEEDS_REVIEW` by the inspection service.
+Greenhouse, Lever, and Ashby are production-composed ATS adapters. Each adapter
+uses a fresh read-only inspection browser and must return a form whose provider
+and exact job location match the selected target. Ashby additionally requires
+an explicit `/{organization}/{posting}/application` path and rejects an empty
+rendered form. A persisted LinkedIn URL or an unsupported ATS cannot fall back
+to another adapter; it is moved to `NEEDS_REVIEW` by the inspection service.
 
 ## PyCharm configuration
 

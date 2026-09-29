@@ -26,6 +26,7 @@ from app.applications.validator import (
 from app.applications.adapters.detector import (
     ATSProvider,
 )
+from app.applications.adapters.ashby import AshbyFormAdapter
 from app.applications.adapters.greenhouse import (
     GreenhouseFormAdapter,
 )
@@ -77,6 +78,7 @@ def test_registry_build_does_not_create_browser_session() -> None:
         ATSProvider.GREENHOUSE
     )
     assert registry.has_adapter(ATSProvider.LEVER)
+    assert registry.has_adapter(ATSProvider.ASHBY)
 
     browser_factory.assert_not_called()
 
@@ -93,6 +95,22 @@ def test_lever_adapter_is_created_lazily() -> None:
 
     browser_factory.assert_called_once_with()
     assert isinstance(adapter, LeverFormAdapter)
+    assert adapter.job_url == url
+    assert adapter.browser_session is browser_session
+
+
+def test_ashby_adapter_is_created_lazily() -> None:
+    browser_session = MagicMock(spec=BrowserSession)
+    browser_factory = MagicMock(return_value=browser_session)
+    registry = build_application_adapter_registry(
+        browser_session_factory=browser_factory,
+    )
+    url = "https://jobs.ashbyhq.com/example/123/application"
+
+    adapter = registry.create(ATSProvider.ASHBY, url)
+
+    browser_factory.assert_called_once_with()
+    assert isinstance(adapter, AshbyFormAdapter)
     assert adapter.job_url == url
     assert adapter.browser_session is browser_session
 
@@ -298,6 +316,9 @@ def test_build_application_workflow_composes_controlled_layers(
     )
     assert workflow._inspection_service.registry.has_adapter(
         ATSProvider.LEVER
+    )
+    assert workflow._inspection_service.registry.has_adapter(
+        ATSProvider.ASHBY
     )
 
 

@@ -39,7 +39,11 @@ class ApplicationTargetResolver:
         self.supported_providers = frozenset(
             supported_providers
             if supported_providers is not None
-            else {ATSProvider.GREENHOUSE, ATSProvider.LEVER}
+            else {
+                ATSProvider.GREENHOUSE,
+                ATSProvider.LEVER,
+                ATSProvider.ASHBY,
+            }
         )
 
     def resolve(self, candidates: Iterable[object]) -> ApplicationTargetResult:
@@ -66,6 +70,12 @@ class ApplicationTargetResolver:
                 continue
             provider = ATSDetector.detect(canonical)
             if provider == ATSProvider.UNKNOWN:
+                saw_invalid = True
+                continue
+            if (
+                provider == ATSProvider.ASHBY
+                and not self._is_ashby_application_path(canonical)
+            ):
                 saw_invalid = True
                 continue
             if provider not in self.supported_providers:
@@ -127,6 +137,18 @@ class ApplicationTargetResolver:
         hostname = parsed.hostname.lower().rstrip(".")
         netloc = hostname
         return urlunsplit(("https", netloc, parsed.path, "", ""))
+
+    @staticmethod
+    def _is_ashby_application_path(url: str) -> bool:
+        path_segments = [
+            segment
+            for segment in urlsplit(url).path.split("/")
+            if segment
+        ]
+        return (
+            len(path_segments) == 3
+            and path_segments[-1].lower() == "application"
+        )
 
 
 def resolve_job_application_target(job: Job) -> ApplicationTargetResult:

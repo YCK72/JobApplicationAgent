@@ -113,6 +113,43 @@ def test_review_service_accepts_reviewed_lever_target(
     tracker.generate.assert_called_once_with()
 
 
+def test_review_service_accepts_reviewed_ashby_target(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(tmp_path / "jobs.db")
+    job_id = database.add_job(unresolved_job())
+    pipeline = MagicMock()
+    tracker = MagicMock()
+    ashby_url = "https://jobs.ashbyhq.com/example/123/application"
+
+    def reprocess(existing_id, job):
+        database.update_job(existing_id, job)
+        return MagicMock(
+            job=job,
+            outcome=PipelineOutcome.AUTO_READY,
+            reason="Reprocessed.",
+            job_id=existing_id,
+        )
+
+    pipeline.reprocess.side_effect = reprocess
+    tracker.generate.return_value = tmp_path / "tracker.xlsx"
+    service = ApplicationTargetReviewService(
+        database=database,
+        pipeline=pipeline,
+        tracker=tracker,
+    )
+
+    result = service.assign(job_id=job_id, application_url=ashby_url)
+
+    assert result.status == TargetReviewStatus.UPDATED
+    assert result.application_url == ashby_url
+    assert (
+        database.get_job_by_id(job_id).application_url.encoded_string()
+        == ashby_url
+    )
+    tracker.generate.assert_called_once_with()
+
+
 def test_review_service_rejects_ineligible_record(tmp_path: Path) -> None:
     database = JobDatabase(tmp_path / "jobs.db")
     job = unresolved_job()

@@ -24,6 +24,7 @@ from app.applications.answer_service import (
 from app.applications.adapters.detector import (
     ATSProvider,
 )
+from app.applications.adapters.ashby import AshbyFormAdapter
 from app.applications.adapters.greenhouse import (
     GreenhouseFormAdapter,
 )
@@ -110,12 +111,22 @@ def build_application_adapter_registry(
             browser_session=browser_session_factory(),
         )
 
+    def create_ashby_adapter(
+        job_url: str,
+    ) -> AshbyFormAdapter:
+        return AshbyFormAdapter(
+            job_url=job_url,
+            browser_session=browser_session_factory(),
+        )
+
     return ApplicationAdapterRegistry(
         {
             ATSProvider.GREENHOUSE:
                 create_greenhouse_adapter,
             ATSProvider.LEVER:
                 create_lever_adapter,
+            ATSProvider.ASHBY:
+                create_ashby_adapter,
         }
     )
 
