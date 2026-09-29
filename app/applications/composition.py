@@ -27,6 +27,7 @@ from app.applications.adapters.detector import (
 from app.applications.adapters.greenhouse import (
     GreenhouseFormAdapter,
 )
+from app.applications.adapters.lever import LeverFormAdapter
 from app.applications.adapters.registry import (
     ApplicationAdapterRegistry,
 )
@@ -101,10 +102,20 @@ def build_application_adapter_registry(
             browser_session=browser_session_factory(),
         )
 
+    def create_lever_adapter(
+        job_url: str,
+    ) -> LeverFormAdapter:
+        return LeverFormAdapter(
+            job_url=job_url,
+            browser_session=browser_session_factory(),
+        )
+
     return ApplicationAdapterRegistry(
         {
             ATSProvider.GREENHOUSE:
                 create_greenhouse_adapter,
+            ATSProvider.LEVER:
+                create_lever_adapter,
         }
     )
 

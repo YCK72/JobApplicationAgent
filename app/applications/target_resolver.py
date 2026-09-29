@@ -29,8 +29,7 @@ class ApplicationTargetResolver:
     """Validate explicit ATS application targets and fail closed.
 
     Resolution never follows redirects or searches arbitrary page text.  Only
-    exact, HTTPS URLs on known ATS hosts are candidates, and production starts
-    with Greenhouse as the sole enabled provider.
+    exact, HTTPS URLs on enabled ATS hosts are candidates.
     """
 
     def __init__(
@@ -40,7 +39,7 @@ class ApplicationTargetResolver:
         self.supported_providers = frozenset(
             supported_providers
             if supported_providers is not None
-            else {ATSProvider.GREENHOUSE}
+            else {ATSProvider.GREENHOUSE, ATSProvider.LEVER}
         )
 
     def resolve(self, candidates: Iterable[object]) -> ApplicationTargetResult:
@@ -131,7 +130,7 @@ class ApplicationTargetResolver:
 
 
 def resolve_job_application_target(job: Job) -> ApplicationTargetResult:
-    """Resolve a job's dedicated target, with safe Greenhouse compatibility."""
+    """Resolve a job's dedicated target with safe known-ATS compatibility."""
 
     candidates: list[object] = []
     application_url = (

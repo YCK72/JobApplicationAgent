@@ -68,6 +68,8 @@ def test_resolver_removes_explicit_default_https_port() -> None:
         "https://user:pass@job-boards.greenhouse.io/example/jobs/123",
         "https://job-boards.greenhouse.io:444/example/jobs/123",
         "https://job-boards.greenhouse.io.evil.com/example/jobs/123",
+        "http://jobs.lever.co/example/123/apply",
+        "https://jobs.lever.co.evil.example/example/123/apply",
         "javascript:alert(1)",
     ],
 )
@@ -77,9 +79,18 @@ def test_resolver_rejects_unsafe_targets(url: str) -> None:
     assert result.application_url is None
 
 
-def test_resolver_rejects_unsupported_ats_by_default() -> None:
+def test_resolver_accepts_explicit_lever_target_by_default() -> None:
     result = ApplicationTargetResolver().resolve(
-        ["https://jobs.lever.co/example/abc"]
+        ["https://jobs.lever.co/example/abc/apply?lever-source=review#form"]
+    )
+    assert result.status == ApplicationTargetStatus.RESOLVED
+    assert result.application_url == "https://jobs.lever.co/example/abc/apply"
+    assert result.provider.value == "LEVER"
+
+
+def test_resolver_still_rejects_unenabled_known_ats() -> None:
+    result = ApplicationTargetResolver().resolve(
+        ["https://jobs.ashbyhq.com/example/abc/application"]
     )
     assert result.status == ApplicationTargetStatus.UNSUPPORTED
     assert result.application_url is None

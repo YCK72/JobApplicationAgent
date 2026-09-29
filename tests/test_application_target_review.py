@@ -75,7 +75,7 @@ def test_review_service_validates_reprocesses_and_refreshes_tracker(
     tracker.generate.assert_called_once_with()
 
 
-def test_review_service_rejects_unsupported_target_without_mutation(
+def test_review_service_accepts_reviewed_lever_target(
     tmp_path: Path,
 ) -> None:
     database = JobDatabase(tmp_path / "jobs.db")
@@ -88,15 +88,29 @@ def test_review_service_rejects_unsupported_target_without_mutation(
         tracker=tracker,
     )
 
-    result = service.assign(
-        job_id=job_id,
-        application_url="https://jobs.lever.co/example/123",
-    )
+    lever_url = "https://jobs.lever.co/example/123/apply"
 
-    assert result.status == TargetReviewStatus.INVALID_TARGET
-    assert database.get_job_by_id(job_id).application_url is None
-    pipeline.reprocess.assert_not_called()
-    tracker.generate.assert_not_called()
+    def reprocess(existing_id, job):
+        database.update_job(existing_id, job)
+        return MagicMock(
+            job=job,
+            outcome=PipelineOutcome.AUTO_READY,
+            reason="Reprocessed.",
+            job_id=existing_id,
+        )
+
+    pipeline.reprocess.side_effect = reprocess
+    tracker.generate.return_value = tmp_path / "tracker.xlsx"
+
+    result = service.assign(job_id=job_id, application_url=lever_url)
+
+    assert result.status == TargetReviewStatus.UPDATED
+    assert result.application_url == lever_url
+    assert (
+        database.get_job_by_id(job_id).application_url.encoded_string()
+        == lever_url
+    )
+    tracker.generate.assert_called_once_with()
 
 
 def test_review_service_rejects_ineligible_record(tmp_path: Path) -> None:

@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1332 passed`
+**Latest verified full regression:** `1347 passed`
 
-**Most recently completed milestone:** **60B — reviewed application-target assignment**
+**Most recently completed milestone:** **60C — fully validated Lever adapter**
 
-**Current development milestone:** **60C — add a fully validated Lever adapter**
+**Current development milestone:** **60D — add a fully validated Ashby adapter**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -113,9 +113,9 @@ free text, guess targets, follow redirects, or accept lookalike hosts. It
 canonicalizes explicit HTTPS targets by removing query parameters and
 fragments.
 
-Greenhouse is the only enabled production ATS target in Milestone 60A. Lever,
-Ashby, Workday, missing targets, invalid targets, and multiple candidate
-targets fail closed. An unresolved LinkedIn listing is persisted as
+Greenhouse and Lever are the enabled production ATS targets. Ashby, Workday,
+missing targets, invalid targets, and multiple candidate targets fail closed.
+An unresolved LinkedIn listing is persisted as
 `NEEDS_REVIEW` before fit scoring or resume routing. The Excel tracker and web
 dashboard display both the source listing and the verified application target.
 
@@ -356,7 +356,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1332 passed
+1347 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -371,7 +371,7 @@ python -m app.dashboard.server --open-browser
 
 The dashboard reads `data/exports/Job_Application_Tracker.xlsx` and refreshes
 the browser view every five seconds. Unresolved LinkedIn records expose a
-guarded form for assigning a reviewed Greenhouse target. A valid assignment
+guarded form for assigning a reviewed Greenhouse or Lever target. A valid assignment
 updates the same database row, reruns the deterministic pipeline, and refreshes
 Excel. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
 instructions.
