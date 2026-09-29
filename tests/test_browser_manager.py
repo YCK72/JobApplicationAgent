@@ -20,7 +20,7 @@ def create_mock_playwright_factory() -> tuple[
     context = MagicMock()
     browser = MagicMock()
     playwright = MagicMock()
-    manager = MagicMock()
+    manager = MagicMock(spec=["start"])
 
     context.new_page.return_value = page
     browser.new_context.return_value = context
@@ -215,7 +215,7 @@ def test_close_releases_resources(
     page.close.assert_called_once_with()
     context.close.assert_called_once_with()
     browser.close.assert_called_once_with()
-    manager.stop.assert_called_once_with()
+    manager.start.return_value.stop.assert_called_once_with()
 
     assert session.is_started is False
 
@@ -249,7 +249,7 @@ def test_close_is_idempotent(
     page.close.assert_called_once_with()
     context.close.assert_called_once_with()
     browser.close.assert_called_once_with()
-    manager.stop.assert_called_once_with()
+    manager.start.return_value.stop.assert_called_once_with()
 
 
 def test_context_manager_closes_resources(
@@ -275,4 +275,16 @@ def test_context_manager_closes_resources(
     page.close.assert_called_once_with()
     context.close.assert_called_once_with()
     browser.close.assert_called_once_with()
-    manager.stop.assert_called_once_with()
+    manager.start.return_value.stop.assert_called_once_with()
+
+def test_launch_failure_stops_started_playwright(tmp_path: Path) -> None:
+    factory, manager, browser, context, page = create_mock_playwright_factory()
+    manager.start.return_value.chromium.launch.side_effect = RuntimeError("Launch failed")
+    session = BrowserSession(
+        brave_executable=create_fake_brave(tmp_path), playwright_factory=factory,
+    )
+    with pytest.raises(RuntimeError, match="Launch failed"):
+        session.start()
+    session.close()
+    manager.start.return_value.stop.assert_called_once_with()
+    assert not session.is_started

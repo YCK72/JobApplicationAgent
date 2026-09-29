@@ -21,8 +21,8 @@ from app.applications.adapters.greenhouse import (
 from app.applications.adapters.registry import (
     ApplicationAdapterRegistry,
 )
-from app.applications.browser_form_executor import (
-    BrowserFormExecutor,
+from app.applications.execution_session import (
+    ApplicationExecutionSession,
 )
 from app.applications.execution_guard import (
     ExternalExecutionGuard,
@@ -52,9 +52,6 @@ from app.applications.workflow import (
     ApplicationWorkflow,
 )
 from app.browser import BrowserSession
-from app.browser.form_writer import (
-    BrowserFieldWriter,
-)
 from app.tracking.database import JobDatabase
 
 
@@ -121,7 +118,6 @@ def build_application_workflow(
     analyzer: ApplicationFormAnalyzer,
     planner: ApplicationFormPlanner,
     database: JobDatabase,
-    writer: BrowserFieldWriter,
     allowed_local_fixture: Path,
     browser_session_factory: BrowserSessionFactory = BrowserSession,
 ) -> ApplicationWorkflow:
@@ -143,9 +139,10 @@ def build_application_workflow(
 
     Browser inspection remains lazy through the ATS adapter registry.
 
-    Browser field mutation is delegated to the supplied
-    BrowserFieldWriter. The writer must already be bound to the
-    browser page that will be used for controlled execution.
+    Execution uses a lazy ApplicationExecutionSession factory after
+    preparation, inspection, form authorization, and target authorization
+    succeed. Inspection and execution independently request browser
+    sessions from the configured factory; no page is shared between them.
 
     External HTTP/HTTPS mutation remains disabled by default at
     workflow execution time. The workflow caller must explicitly
@@ -172,16 +169,20 @@ def build_application_workflow(
         allowed_local_fixture=allowed_local_fixture,
     )
 
-    browser_executor = BrowserFormExecutor(
-        writer=writer,
-    )
+    def create_execution_session(
+        target_url: str,
+    ) -> ApplicationExecutionSession:
+        return ApplicationExecutionSession(
+            target_url=target_url,
+            browser_session_factory=browser_session_factory,
+        )
 
     return ApplicationWorkflow(
         preparation_service=preparation_service,
         inspection_service=inspection_service,
         form_executor=form_executor,
         execution_guard=execution_guard,
-        browser_executor=browser_executor,
+        execution_session_factory=create_execution_session,
     )
 def build_application_run_coordinator(
     *,

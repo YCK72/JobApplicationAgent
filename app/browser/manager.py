@@ -136,7 +136,7 @@ class BrowserSession:
         page = self._page
         context = self._context
         browser = self._browser
-        playwright_manager = self._playwright_manager
+        playwright = self._playwright
 
         self._page = None
         self._context = None
@@ -162,9 +162,9 @@ class BrowserSession:
             except Exception:
                 pass
 
-        if playwright_manager is not None:
+        if playwright is not None:
             try:
-                playwright_manager.stop()
+                playwright.stop()
             except Exception:
                 pass
 
