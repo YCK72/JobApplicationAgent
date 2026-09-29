@@ -131,8 +131,15 @@ tbody tr:hover { background: #fbfcfe; }
 .pill.status-needs-review { color: #8a5c0b; background: #fff3d8; }
 .review-cell { min-width: 220px; }
 .review-kind { display: inline-block; margin-bottom: 5px; padding: 4px 7px; border-radius: 999px; color: #8a5c0b; background: #fff3d8; font-size: .64rem; font-weight: 800; }
+.review-kind.resolved { color: #106e5e; background: #e7f7f3; }
 .review-reason { display: block; max-width: 300px; color: var(--muted); font-size: .72rem; line-height: 1.4; }
+.review-history { display: block; margin-top: 6px; color: #7b5c18; font-size: .68rem; }
 .review-clear { color: #7d8b9d; font-size: .72rem; }
+.resolution-open, .resolution-save, .resolution-cancel { height: 30px; margin-top: 8px; padding: 0 8px; font-size: .68rem; font-weight: 800; }
+.resolution-open, .resolution-save { border-color: var(--blue); color: white; background: var(--blue); }
+.resolution-cancel { border-color: var(--line); color: var(--muted); background: white; }
+.resolution-form { display: grid; grid-template-columns: 110px minmax(180px, 1fr) auto auto; gap: 6px; margin-top: 8px; }
+.resolution-outcome, .resolution-note { height: 32px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; background: white; }
 .link-group { display: flex; align-items: center; gap: 6px; min-width: 150px; }
 .open-link { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--blue); text-decoration: none; font-size: .72rem; font-weight: 800; }
 .open-link:hover { border-color: #9bb6ec; background: var(--blue-soft); }

@@ -123,6 +123,27 @@ class JobDatabase:
                 """
             )
 
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS application_review_resolutions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id INTEGER NOT NULL,
+                    review_kind TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+                )
+                """
+            )
+
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_review_resolutions_job_kind
+                ON application_review_resolutions(job_id, review_kind, id)
+                """
+            )
+
             connection.commit()
 
     # ---------------------------------------------------------
@@ -325,6 +346,65 @@ class JobDatabase:
             (int(row["id"]), self._row_to_job(row))
             for row in rows
         ]
+
+    def add_review_resolution(
+        self,
+        *,
+        job_id: int,
+        review_kind: str,
+        outcome: str,
+        note: str,
+        created_at: str,
+    ) -> int:
+        """Append one dashboard review decision without changing job state."""
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO application_review_resolutions (
+                    job_id, review_kind, outcome, note, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (job_id, review_kind, outcome, note, created_at),
+            )
+            connection.commit()
+            return int(cursor.lastrowid)
+
+    def get_review_resolutions(self, job_id: int) -> list[dict[str, object]]:
+        """Return append-only review history for one persisted job."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, job_id, review_kind, outcome, note, created_at
+                FROM application_review_resolutions
+                WHERE job_id = ?
+                ORDER BY id ASC
+                """,
+                (job_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_latest_review_resolution(
+        self,
+        job_id: int,
+        review_kind: str,
+    ) -> dict[str, object] | None:
+        """Return the newest decision for one job and review kind."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, job_id, review_kind, outcome, note, created_at
+                FROM application_review_resolutions
+                WHERE job_id = ? AND review_kind = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (job_id, review_kind),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
     # ---------------------------------------------------------
     # Updates

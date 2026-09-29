@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1393 passed`
+**Latest verified full regression:** `1406 passed`
 
-**Most recently completed milestone:** **61A — dashboard application review queue**
+**Most recently completed milestone:** **61B — durable review-resolution tracking**
 
-**Current development milestone:** **61B — durable review-resolution tracking**
+**Current development milestone:** **61C — review-history inspection and export**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -360,7 +360,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1393 passed
+1406 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -379,7 +379,10 @@ actionable application needs attention and can filter the table to those
 records. Unresolved LinkedIn records expose a
 guarded form for assigning a reviewed Greenhouse, Lever, Ashby, or Workday target. A valid assignment
 updates the same database row, reruns the deterministic pipeline, and refreshes
-Excel. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
+Excel. Each queued item can also receive a durable `RESOLVED`, `DEFERRED`, or
+`DISMISSED` decision with a required note. These decisions update the review
+queue only; they never change application lifecycle status or authorize
+submission. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
 instructions.
 
 ### 9. Discover jobs into the live tracker

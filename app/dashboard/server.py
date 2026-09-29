@@ -21,6 +21,10 @@ from app.applications.target_review import (
     ApplicationTargetReviewService,
     TargetReviewStatus,
 )
+from app.dashboard.review_resolution import (
+    ApplicationReviewResolutionService,
+    ReviewResolutionStatus,
+)
 from app.jobs.composition import build_job_pipeline
 from app.tracking.database import DEFAULT_DB_PATH, JobDatabase
 from app.tracking.excel_tracker import ExcelTracker
@@ -49,11 +53,13 @@ class DashboardServer(ThreadingHTTPServer):
         reader: TrackerWorkbookReader,
         static_dir: Path,
         target_review_service: ApplicationTargetReviewService | None,
+        review_resolution_service: ApplicationReviewResolutionService | None,
     ) -> None:
         super().__init__(server_address, request_handler)
         self.reader = reader
         self.static_dir = static_dir
         self.target_review_service = target_review_service
+        self.review_resolution_service = review_resolution_service
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -73,6 +79,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         )
         if match and self.server.target_review_service is not None:
             self._assign_application_target(int(match.group(1)))
+            return
+        match = re.fullmatch(
+            r"/api/jobs/([1-9][0-9]*)/review-resolution",
+            path,
+        )
+        if match and self.server.review_resolution_service is not None:
+            self._record_review_resolution(int(match.group(1)))
             return
         self._method_not_allowed()
 
@@ -146,12 +159,18 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return
 
         reviewer = self.server.target_review_service
-        if reviewer is not None:
+        resolver = self.server.review_resolution_service
+        database = (
+            reviewer.database
+            if reviewer is not None
+            else resolver.database if resolver is not None else None
+        )
+        if database is not None:
             snapshot = deepcopy(snapshot)
             for item in snapshot["jobs"]:
                 source_url = item.get("job_url")
                 stored_record = (
-                    reviewer.database.get_job_with_id_by_url(source_url)
+                    database.get_job_with_id_by_url(source_url)
                     if source_url
                     else None
                 )
@@ -160,7 +179,17 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 if stored_record is not None:
                     job_id, stored = stored_record
                     item["job_id"] = job_id
-                    item["target_review_eligible"] = reviewer.is_eligible(stored)
+                    item["target_review_eligible"] = (
+                        reviewer.is_eligible(stored)
+                        if reviewer is not None
+                        else False
+                    )
+                    if resolver is not None:
+                        item.update(resolver.apply_latest(job_id, item))
+            snapshot["metrics"]["review_queue"] = sum(
+                item.get("review_required") is True
+                for item in snapshot["jobs"]
+            )
 
         self._send_json(
             HTTPStatus.OK,
@@ -246,6 +275,73 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             include_body=True,
         )
 
+    def _record_review_resolution(self, job_id: int) -> None:
+        if self.headers.get_content_type() != "application/json":
+            self._send_json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"error": "Content-Type must be application/json."},
+                include_body=True,
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 1 <= length <= 8192:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must contain 1-8192 bytes."},
+                include_body=True,
+            )
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError):
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must be valid JSON."},
+                include_body=True,
+            )
+            return
+        if not isinstance(payload, dict):
+            payload = {}
+
+        try:
+            result = self.server.review_resolution_service.record(
+                job_id=job_id,
+                outcome=payload.get("outcome"),
+                note=payload.get("note"),
+            )
+        except Exception:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "Review decision could not be recorded."},
+                include_body=True,
+            )
+            return
+
+        status_code = {
+            ReviewResolutionStatus.RECORDED: HTTPStatus.OK,
+            ReviewResolutionStatus.INVALID: HTTPStatus.BAD_REQUEST,
+            ReviewResolutionStatus.NOT_FOUND: HTTPStatus.NOT_FOUND,
+            ReviewResolutionStatus.NOT_REQUIRED: HTTPStatus.CONFLICT,
+        }[result.status]
+        record = result.record
+        self._send_json(
+            status_code,
+            {
+                "status": result.status.value,
+                "reason": result.reason,
+                "job_id": result.job_id,
+                "outcome": record.outcome.value if record else None,
+                "review_kind": record.review_kind if record else None,
+                "note": record.note if record else None,
+                "recorded_at": record.created_at if record else None,
+                "tracker_error": result.tracker_error,
+            },
+            include_body=True,
+        )
+
     def _method_not_allowed(self) -> None:
         body = json.dumps({
             "error": "Method not allowed."
@@ -253,7 +349,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.METHOD_NOT_ALLOWED)
         allowed = (
             "GET, HEAD, POST"
-            if self.server.target_review_service is not None
+            if (
+                self.server.target_review_service is not None
+                or self.server.review_resolution_service is not None
+            )
             else "GET, HEAD"
         )
         self.send_header("Allow", allowed)
@@ -319,13 +418,17 @@ def create_dashboard_server(
     port: int = 8765,
     static_dir: Path = STATIC_DIR,
     target_review_service: ApplicationTargetReviewService | None = None,
+    review_resolution_service: ApplicationReviewResolutionService | None = None,
 ) -> DashboardServer:
     if not isinstance(port, int) or not 0 <= port <= 65535:
         raise ValueError("port must be an integer from 0 to 65535")
     if not isinstance(host, str) or not host.strip():
         raise ValueError("host must not be empty")
     if (
-        target_review_service is not None
+        (
+            target_review_service is not None
+            or review_resolution_service is not None
+        )
         and host.strip().lower() not in {"127.0.0.1", "::1", "localhost"}
     ):
         raise ValueError("Editable dashboard requires a loopback host.")
@@ -336,6 +439,7 @@ def create_dashboard_server(
         reader=reader,
         static_dir=static_dir,
         target_review_service=target_review_service,
+        review_resolution_service=review_resolution_service,
     )
 
 
@@ -377,11 +481,16 @@ def main(argv: list[str] | None = None) -> int:
             pipeline=build_job_pipeline(database=database),
             tracker=tracker,
         )
+        resolution_service = ApplicationReviewResolutionService(
+            database=database,
+            tracker=tracker,
+        )
         server = create_dashboard_server(
             reader=TrackerWorkbookReader(args.workbook),
             host=args.host,
             port=args.port,
             target_review_service=reviewer,
+            review_resolution_service=resolution_service,
         )
     except (OSError, ValueError) as exc:
         print(f"Dashboard could not start: {exc}", file=sys.stderr)

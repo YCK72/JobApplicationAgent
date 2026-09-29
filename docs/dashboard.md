@@ -61,6 +61,17 @@ automation. Source and Apply links remain separate so the original listing and
 validated ATS target can be checked independently. Completed, rejected,
 withdrawn, offered, and filtered-out jobs are excluded from this queue.
 
+Use **Record decision** to save a `RESOLVED`, `DEFERRED`, or `DISMISSED`
+decision with a required note. Decisions are appended to SQLite with the job,
+review kind, and timestamp. `DEFERRED` keeps the item in the active queue;
+`RESOLVED` and `DISMISSED` close that specific review kind. If the job later
+develops a different review reason, it returns to the queue automatically.
+
+Review decisions are dashboard audit data only. They do not change the job's
+application status, authorize browser execution, submit an application, or
+record `APPLIED`. The workbook refreshes after a decision so the dashboard can
+reload its current job data, while SQLite retains the review history.
+
 The editable server must bind to `127.0.0.1`, `::1`, or `localhost`. Target
 assignment accepts JSON only and validates the pasted URL through the same
 HTTPS-only application-target resolver used by the application workflow.

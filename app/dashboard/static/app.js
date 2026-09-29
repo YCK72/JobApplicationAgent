@@ -3,6 +3,7 @@
 const state = {
   jobs: [], source: null, loading: false,
   editingJobId: null, targetDraft: "",
+  resolvingJobId: null, resolutionOutcome: "DEFERRED", resolutionNote: "",
 };
 const elements = {
   metrics: document.querySelector("#metrics"),
@@ -137,6 +138,62 @@ function renderTable() {
         createNode("span", "review-kind", label(job.review_kind)),
         createNode("span", "review-reason", job.review_reason || "Review required."),
       );
+      if (job.review_outcome) {
+        review.append(createNode("span", "review-history", `${label(job.review_outcome)}: ${job.review_note || "No note"}`));
+      }
+      if (job.job_id && state.resolvingJobId === job.job_id) {
+        const form = createNode("form", "resolution-form");
+        const outcome = createNode("select", "resolution-outcome");
+        for (const value of ["RESOLVED", "DEFERRED", "DISMISSED"]) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label(value);
+          outcome.append(option);
+        }
+        outcome.value = state.resolutionOutcome;
+        outcome.setAttribute("aria-label", `Review outcome for ${job.title || "job"}`);
+        outcome.addEventListener("change", () => { state.resolutionOutcome = outcome.value; });
+        const note = createNode("input", "resolution-note");
+        note.type = "text";
+        note.required = true;
+        note.minLength = 3;
+        note.maxLength = 1000;
+        note.placeholder = "Required decision note";
+        note.value = state.resolutionNote;
+        note.setAttribute("aria-label", `Review note for ${job.title || "job"}`);
+        note.addEventListener("input", () => { state.resolutionNote = note.value; });
+        const save = createNode("button", "resolution-save", "Save");
+        save.type = "submit";
+        const cancel = createNode("button", "resolution-cancel", "Cancel");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => {
+          state.resolvingJobId = null;
+          state.resolutionNote = "";
+          renderTable();
+        });
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          save.disabled = true;
+          await submitReviewResolution(job.job_id);
+        });
+        form.append(outcome, note, save, cancel);
+        review.append(form);
+      } else if (job.job_id) {
+        const decide = createNode("button", "resolution-open", "Record decision");
+        decide.type = "button";
+        decide.addEventListener("click", () => {
+          state.resolvingJobId = job.job_id;
+          state.resolutionOutcome = "DEFERRED";
+          state.resolutionNote = "";
+          renderTable();
+        });
+        review.append(decide);
+      }
+    } else if (job.review_outcome) {
+      review.append(
+        createNode("span", "review-kind resolved", label(job.review_outcome)),
+        createNode("span", "review-reason", job.review_note || "Review decision recorded."),
+      );
     } else {
       review.append(createNode("span", "review-clear", "No action"));
     }
@@ -231,6 +288,32 @@ async function assignTarget(jobId) {
     elements.reviewNotice.hidden = false;
     elements.reviewNotice.className = "review-notice error";
     elements.reviewNotice.textContent = error instanceof Error ? error.message : "Target could not be saved.";
+    renderTable();
+  }
+}
+
+async function submitReviewResolution(jobId) {
+  try {
+    const response = await fetch(`/api/jobs/${jobId}/review-resolution`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        outcome: state.resolutionOutcome,
+        note: state.resolutionNote,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || payload.reason || "Review decision could not be saved.");
+    state.resolvingJobId = null;
+    state.resolutionNote = "";
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice success";
+    elements.reviewNotice.textContent = `${label(payload.outcome)} review decision saved. ${payload.reason}`;
+    await refresh();
+  } catch (error) {
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice error";
+    elements.reviewNotice.textContent = error instanceof Error ? error.message : "Review decision could not be saved.";
     renderTable();
   }
 }

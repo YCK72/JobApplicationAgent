@@ -11,6 +11,12 @@ import pytest
 
 from app.dashboard.server import create_dashboard_server
 from app.dashboard.review_queue import build_review_queue_item
+from app.dashboard.review_resolution import (
+    ApplicationReviewResolutionService,
+    ReviewResolutionOutcome,
+    ReviewResolutionResult,
+    ReviewResolutionStatus,
+)
 from app.applications.target_review import (
     ApplicationTargetReviewService,
     TargetReviewResult,
@@ -309,6 +315,7 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             assert "Set target" in script
             assert "review_reason" in script
             assert "review-filter" in script
+            assert "review-resolution" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()
@@ -487,6 +494,114 @@ def test_target_review_api_rejects_non_json_body(tmp_path: Path) -> None:
             urlopen(request, timeout=5)
         assert error.value.code == 415
         reviewer.assign.assert_not_called()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_review_resolution_api_records_explicit_decision(
+    tmp_path: Path,
+) -> None:
+    service = MagicMock()
+    service.record.return_value = ReviewResolutionResult(
+        status=ReviewResolutionStatus.RECORDED,
+        reason="Review decision recorded.",
+        job_id=7,
+        record=MagicMock(
+            outcome=ReviewResolutionOutcome.DEFERRED,
+            review_kind="TARGET_REQUIRED",
+            note="Waiting for the employer application link.",
+            created_at="2026-09-29T12:00:00",
+        ),
+        export_path=tmp_path / "tracker.xlsx",
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        review_resolution_service=service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/review-resolution",
+            method="POST",
+            data=json.dumps({
+                "outcome": "DEFERRED",
+                "note": "Waiting for the employer application link.",
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+
+        assert response.status == 200
+        assert payload["status"] == "RECORDED"
+        assert payload["outcome"] == "DEFERRED"
+        service.record.assert_called_once_with(
+            job_id=7,
+            outcome="DEFERRED",
+            note="Waiting for the employer application link.",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_dashboard_applies_latest_resolution_without_changing_job_status(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(tmp_path / "review-resolution.db")
+    job_id = database.add_job(Job(
+        company="Review Company",
+        title="Software Engineer I",
+        location="Seattle, WA",
+        url="https://www.linkedin.com/jobs/view/555",
+        source="linkedin_composio",
+        status=ApplicationStatus.NEEDS_REVIEW,
+        application_method=ApplicationMethod.REVIEW,
+    ))
+    workbook = tmp_path / "review-resolution.xlsx"
+    tracker = ExcelTracker(database, workbook)
+    tracker.generate()
+    service = ApplicationReviewResolutionService(
+        database=database,
+        tracker=tracker,
+    )
+    service.record(
+        job_id=job_id,
+        outcome="DISMISSED",
+        note="The role closed before an application target was published.",
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(workbook),
+        review_resolution_service=service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        with urlopen(
+            f"http://127.0.0.1:{server.server_port}/api/jobs",
+            timeout=5,
+        ) as response:
+            payload = json.load(response)
+
+        item = payload["jobs"][0]
+        assert payload["metrics"]["review_queue"] == 0
+        assert item["review_required"] is False
+        assert item["review_outcome"] == "DISMISSED"
+        assert "role closed" in item["review_note"]
+        assert database.get_job_by_id(job_id).status == (
+            ApplicationStatus.NEEDS_REVIEW
+        )
     finally:
         server.shutdown()
         server.server_close()
