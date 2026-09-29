@@ -409,6 +409,7 @@ class JobDatabase:
         self,
         job_id: int,
         resume_used: Optional[str] = None,
+        notes: Optional[str] = None,
     ) -> None:
         """
         Mark an application as successfully submitted.
@@ -428,6 +429,7 @@ class JobDatabase:
                 SET status = ?,
                     date_applied = ?,
                     resume_used = ?,
+                    notes = COALESCE(?, notes),
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -435,6 +437,7 @@ class JobDatabase:
                     ApplicationStatus.APPLIED.value,
                     now.isoformat(),
                     resume_used,
+                    notes,
                     now.isoformat(),
                     job_id,
                 ),

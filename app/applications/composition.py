@@ -15,6 +15,9 @@ from app.applications.submission_confirmation import (
 from app.applications.single_job import (
     SingleJobApplicationLauncher,
 )
+from app.applications.submission_recording import (
+    SubmissionRecordingRunner,
+)
 from app.applications.answer_service import (
     build_application_answer_resolver,
 )
@@ -311,6 +314,26 @@ def build_single_job_application_launcher(
     return SingleJobApplicationLauncher(
         database=database,
         coordinator=coordinator,
+        tracker=ExcelTracker(
+            database=database,
+            export_path=Path(export_path),
+        ),
+    )
+
+
+def build_submission_recording_runner(
+    *,
+    database_path: Path | str = DEFAULT_APPLICATION_DATABASE_PATH,
+    export_path: Path | str = DEFAULT_APPLICATION_EXPORT_PATH,
+) -> SubmissionRecordingRunner:
+    """Compose exact-ID post-review recording with tracker refresh."""
+
+    database = JobDatabase(Path(database_path))
+    return SubmissionRecordingRunner(
+        database=database,
+        confirmation_service=build_submission_confirmation_service(
+            database=database,
+        ),
         tracker=ExcelTracker(
             database=database,
             export_path=Path(export_path),

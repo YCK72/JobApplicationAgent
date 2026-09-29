@@ -220,10 +220,17 @@ class SubmissionConfirmationService:
         job_id: int,
         evidence: str,
     ) -> SubmissionConfirmationResult:
+        reason = (
+            "Successful submission was independently confirmed. "
+            f"Evidence: {evidence}"
+        )
+        notes = self._append_note(job.notes, reason)
+
         try:
             self.database.mark_applied(
                 job_id,
                 job.resume_used,
+                notes=notes,
             )
         except Exception as exc:
             return self._failed(
@@ -248,14 +255,12 @@ class SubmissionConfirmationService:
         job.status = stored.status
         job.date_applied = stored.date_applied
         job.resume_used = stored.resume_used
+        job.notes = stored.notes
 
         return SubmissionConfirmationResult(
             job=job,
             outcome=SubmissionConfirmationOutcome.CONFIRMED,
-            reason=(
-                "Successful submission was independently confirmed. "
-                f"Evidence: {evidence}"
-            ),
+            reason=reason,
         )
 
     def _record_unconfirmed(
@@ -311,6 +316,15 @@ class SubmissionConfirmationService:
             return None
 
         return normalized
+
+    @staticmethod
+    def _append_note(
+        existing: str | None,
+        message: str,
+    ) -> str:
+        if existing and existing.strip():
+            return f"{existing.rstrip()}\n{message}"
+        return message
 
     @staticmethod
     def _blocked(

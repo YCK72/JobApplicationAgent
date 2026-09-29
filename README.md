@@ -7,9 +7,9 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1292 passed`
-**Most recently completed milestone:** **59B — controlled single-job launch by exact persisted job ID**
-**Current development milestone:** **59C — explicit post-review submission confirmation command**
+**Latest verified full regression:** `1307 passed`
+**Most recently completed milestone:** **59C — explicit post-review submission confirmation command**
+**Current development milestone:** **60A — resolve discovered listings to supported ATS application targets**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -337,7 +337,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1292 passed
+1307 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -396,6 +396,25 @@ A successful run stops at `FORM_STARTED` for human review and manual
 submission. It never clicks Submit or records `APPLIED`. See
 [docs/application_launcher.md](docs/application_launcher.md) for supported ATS
 and lifecycle details.
+
+### 11. Record the post-review submission result
+
+After manually reviewing and submitting an application, record independently
+confirmed success with evidence:
+
+```powershell
+python -m scripts.record_submission `
+    --job-id 123 `
+    --submitted `
+    --confirmed `
+    --evidence "Portal displayed confirmation number 456"
+```
+
+If submission was attempted but success could not be confirmed, omit
+`--confirmed`. The command records `SUBMISSION_UNCONFIRMED` instead of
+`APPLIED`. See
+[docs/submission_recording.md](docs/submission_recording.md) for the complete
+contract.
 
 ## Useful Focused Tests
 
