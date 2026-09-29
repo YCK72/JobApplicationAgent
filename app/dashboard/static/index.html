@@ -126,13 +126,24 @@
           </div>
           <div id="history-list" class="history-list"></div>
         </section>
+        <section id="application-preview-panel" class="preview-panel" aria-labelledby="preview-title" hidden>
+          <div class="history-heading">
+            <div>
+              <p class="eyebrow">CONTROLLED PREVIEW</p>
+              <h3 id="preview-title">Application preview</h3>
+              <p id="preview-job" class="muted"></p>
+            </div>
+            <button id="preview-close" class="history-close" type="button">Close</button>
+          </div>
+          <div id="preview-content" class="preview-content" aria-live="polite"></div>
+        </section>
       </div>
 
       <aside class="status-panel" aria-labelledby="status-title">
         <p class="eyebrow">DISTRIBUTION</p>
         <h2 id="status-title">By status</h2>
         <div id="status-breakdown" class="status-breakdown"></div>
-        <p class="aside-note">The dashboard refreshes every five seconds. Unresolved LinkedIn jobs can receive a reviewed Greenhouse, Lever, Ashby, or Workday application URL here.</p>
+        <p class="aside-note">The dashboard refreshes every five seconds. Preview shows the saved application plan without starting a browser or running the workflow.</p>
       </aside>
     </section>
   </main>

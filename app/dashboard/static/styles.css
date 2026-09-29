@@ -166,6 +166,19 @@ tbody tr:hover { background: #fbfcfe; }
 .history-date { color: var(--muted); font-size: .7rem; }
 .history-kind { display: block; margin-top: 4px; color: var(--navy); font-size: .78rem; }
 .history-note { margin: 6px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.45; }
+.preview-open { height: 32px; padding: 0 9px; border-color: #9bb6ec; color: white; background: var(--blue); font-size: .72rem; font-weight: 800; }
+.preview-open:hover { background: #2858c7; }
+.preview-panel { padding: 22px 24px 26px; border-top: 1px solid var(--line); background: #f7f9fd; }
+.preview-heading { display: flex; align-items: center; gap: 9px; margin: 18px 0 14px; }
+.preview-heading .pill { max-width: none; }
+.preview-reason { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.5; }
+.preview-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 10px; margin-top: 18px; }
+.preview-field { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+.preview-field span { display: block; margin-bottom: 5px; color: var(--muted); font-size: .67rem; font-weight: 800; text-transform: uppercase; }
+.preview-field strong, .preview-field a { display: block; overflow-wrap: anywhere; color: var(--navy); font-size: .78rem; line-height: 1.4; }
+.preview-field a { color: var(--blue); }
+.safety-list { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 8px; margin: 18px 0 0; padding: 0; list-style: none; }
+.safety-list li { padding: 10px 12px; border: 1px solid #c9d8fa; border-radius: 9px; color: #315784; background: var(--blue-soft); font-size: .72rem; font-weight: 750; }
 .empty-state { padding: 54px 20px; text-align: center; }
 .empty-state strong, .empty-state span { display: block; }
 .empty-state span { margin-top: 6px; color: var(--muted); }
@@ -206,6 +219,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   .metrics { grid-template-columns: 1fr 1fr; }
   .metric-card { padding: 14px; }
   .filters { grid-template-columns: 1fr; padding: 0 16px 18px; }
+  .preview-grid, .safety-list { grid-template-columns: 1fr; }
   .table-heading { padding: 20px 16px 14px; }
   footer { display: block; padding: 18px 20px; }
   footer span { display: block; margin-top: 4px; }

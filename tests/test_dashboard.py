@@ -9,6 +9,12 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from app.dashboard import server as dashboard_server
+from app.applications.adapters.detector import ATSProvider
+from app.dashboard.application_preview import (
+    ApplicationPreviewResult,
+    ApplicationPreviewStatus,
+)
 from app.dashboard.server import create_dashboard_server
 from app.dashboard.review_queue import build_review_queue_item
 from app.dashboard.review_resolution import (
@@ -320,6 +326,8 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             assert "review-history" in script
             assert "history-outcome-filter" in script
             assert "history-kind-filter" in script
+            assert "application-preview" in script
+            assert "Preview" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()
@@ -664,6 +672,125 @@ def test_review_history_api_returns_chronological_read_only_records(
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_application_preview_api_is_read_only_and_never_runs_a_browser(
+    tmp_path: Path,
+) -> None:
+    service = MagicMock()
+    service.preview.return_value = ApplicationPreviewResult(
+        status=ApplicationPreviewStatus.READY,
+        reason="Job passed browser-free application preflight.",
+        job_id=7,
+        job=Job(
+            company="Example",
+            title="Software Engineer I",
+            location="Seattle, WA",
+            url="https://www.linkedin.com/jobs/view/123",
+            application_url=(
+                "https://job-boards.greenhouse.io/example/jobs/123"
+            ),
+            source="test",
+            status=ApplicationStatus.NEEDS_APPLICATION,
+            company_rule=CompanyRule.AUTO,
+            application_method=ApplicationMethod.AUTO,
+            resume_used="data/resumes/sde_resume.pdf",
+            fit_score=92,
+        ),
+        source_url="https://www.linkedin.com/jobs/view/123",
+        application_url=(
+            "https://job-boards.greenhouse.io/example/jobs/123"
+        ),
+        provider=ATSProvider.GREENHOUSE,
+        resume="data/resumes/sde_resume.pdf",
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        application_preview_service=service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        with urlopen(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/application-preview",
+            timeout=5,
+        ) as response:
+            payload = json.load(response)
+
+        assert response.status == 200
+        assert payload["status"] == "READY"
+        assert payload["job"]["company"] == "Example"
+        assert payload["source_url"] == (
+            "https://www.linkedin.com/jobs/view/123"
+        )
+        assert payload["application_url"] == (
+            "https://job-boards.greenhouse.io/example/jobs/123"
+        )
+        assert payload["ats_provider"] == "GREENHOUSE"
+        assert payload["resume"] == "data/resumes/sde_resume.pdf"
+        assert payload["safety"] == {
+            "browser_started": False,
+            "workflow_ran": False,
+            "external_authorization_required": True,
+            "fields_filled": False,
+            "files_uploaded": False,
+            "may_submit": False,
+        }
+        service.preview.assert_called_once_with(7)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_dashboard_main_composes_browser_free_preview_service(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    database = MagicMock()
+    tracker = MagicMock()
+    preview_service = MagicMock()
+    http_server = MagicMock(server_port=8765)
+    database_builder = MagicMock(return_value=database)
+    tracker_builder = MagicMock(return_value=tracker)
+    preview_builder = MagicMock(return_value=preview_service)
+    server_builder = MagicMock(return_value=http_server)
+    monkeypatch.setattr(dashboard_server, "JobDatabase", database_builder)
+    monkeypatch.setattr(dashboard_server, "ExcelTracker", tracker_builder)
+    monkeypatch.setattr(
+        dashboard_server,
+        "ApplicationPreviewService",
+        preview_builder,
+    )
+    monkeypatch.setattr(
+        dashboard_server,
+        "create_dashboard_server",
+        server_builder,
+    )
+    monkeypatch.setattr(
+        dashboard_server,
+        "build_job_pipeline",
+        MagicMock(),
+    )
+
+    exit_code = dashboard_server.main([
+        "--database",
+        str(tmp_path / "jobs.db"),
+        "--workbook",
+        str(tmp_path / "tracker.xlsx"),
+    ])
+
+    assert exit_code == 0
+    preview_builder.assert_called_once_with(database=database)
+    assert server_builder.call_args.kwargs[
+        "application_preview_service"
+    ] is preview_service
+    http_server.serve_forever.assert_called_once_with()
+    http_server.server_close.assert_called_once_with()
 
 
 def test_editable_dashboard_requires_loopback_binding(tmp_path: Path) -> None:

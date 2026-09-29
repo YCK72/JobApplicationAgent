@@ -122,7 +122,7 @@ class SingleJobApplicationLauncher:
                 job_id=job_id,
             )
 
-        eligibility_reason = self._eligibility_failure(job)
+        eligibility_reason = self.eligibility_failure(job)
         if eligibility_reason is not None:
             return self._result(
                 status=SingleJobLaunchStatus.NOT_ELIGIBLE,
@@ -189,11 +189,13 @@ class SingleJobApplicationLauncher:
         return [
             SingleJobCandidate(job_id=job_id, job=job)
             for job_id, job in self.database.get_jobs_with_ids()
-            if self._eligibility_failure(job) is None
+            if self.eligibility_failure(job) is None
         ]
 
     @staticmethod
-    def _eligibility_failure(job: Job) -> str | None:
+    def eligibility_failure(job: Job) -> str | None:
+        """Return the deterministic reason a persisted job cannot run."""
+
         if job.status != ApplicationStatus.NEEDS_APPLICATION:
             return (
                 "Job must be in NEEDS_APPLICATION status; current status is "

@@ -5,6 +5,7 @@ const state = {
   editingJobId: null, targetDraft: "",
   resolvingJobId: null, resolutionOutcome: "DEFERRED", resolutionNote: "",
   history: [], historyJob: null,
+  preview: null, previewJob: null,
 };
 const elements = {
   metrics: document.querySelector("#metrics"),
@@ -31,6 +32,10 @@ const elements = {
   historyOutcome: document.querySelector("#history-outcome-filter"),
   historyKind: document.querySelector("#history-kind-filter"),
   historyClose: document.querySelector("#history-close"),
+  previewPanel: document.querySelector("#application-preview-panel"),
+  previewJob: document.querySelector("#preview-job"),
+  previewContent: document.querySelector("#preview-content"),
+  previewClose: document.querySelector("#preview-close"),
 };
 
 const metricDefinitions = [
@@ -261,6 +266,10 @@ function renderTable() {
       }
     }
     if (job.job_id) {
+      const preview = createNode("button", "preview-open", "Preview");
+      preview.type = "button";
+      preview.addEventListener("click", () => { openApplicationPreview(job); });
+      linkCell.append(preview);
       const history = createNode("button", "history-open", "History");
       history.type = "button";
       history.addEventListener("click", () => { openReviewHistory(job); });
@@ -280,6 +289,68 @@ function renderTable() {
     return row;
   });
   replaceChildren(elements.jobsBody, rows);
+}
+
+async function openApplicationPreview(job) {
+  try {
+    const response = await fetch(`/api/jobs/${job.job_id}/application-preview`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || payload.reason || "Application preview could not be loaded.");
+    state.preview = payload;
+    state.previewJob = job;
+    elements.previewJob.textContent = `${job.company || "Unknown company"} — ${job.title || "Untitled role"}`;
+    elements.previewPanel.hidden = false;
+    renderApplicationPreview();
+    elements.previewPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (error) {
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice error";
+    elements.reviewNotice.textContent = error instanceof Error ? error.message : "Application preview could not be loaded.";
+  }
+}
+
+function previewField(name, value, url = false) {
+  const field = createNode("div", "preview-field");
+  field.append(createNode("span", "", name));
+  if (url && value) {
+    const link = createNode("a", "", value);
+    link.href = value;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    field.append(link);
+  } else {
+    field.append(createNode("strong", "", value || "—"));
+  }
+  return field;
+}
+
+function renderApplicationPreview() {
+  const preview = state.preview;
+  if (!preview) return;
+  const heading = createNode("div", "preview-heading");
+  heading.append(
+    createNode("span", `pill status-${String(preview.status || "blocked").toLowerCase()}`, label(preview.status)),
+    createNode("p", "preview-reason", preview.reason),
+  );
+  const grid = createNode("div", "preview-grid");
+  grid.append(
+    previewField("Source URL", preview.source_url, true),
+    previewField("Verified application target", preview.application_url, true),
+    previewField("ATS provider", label(preview.ats_provider)),
+    previewField("Resume", preview.resume),
+    previewField("Fit score", preview.job?.fit_score),
+    previewField("Application status", label(preview.job?.application_status)),
+  );
+  const safety = createNode("ul", "safety-list");
+  safety.append(
+    createNode("li", "", "Browser not started"),
+    createNode("li", "", "Workflow not run"),
+    createNode("li", "", "No fields filled"),
+    createNode("li", "", "No files uploaded"),
+    createNode("li", "", "Submission unavailable"),
+    createNode("li", "", "External authorization required"),
+  );
+  replaceChildren(elements.previewContent, [heading, grid, safety]);
 }
 
 async function assignTarget(jobId) {
@@ -445,6 +516,11 @@ elements.historyClose.addEventListener("click", () => {
   elements.historyPanel.hidden = true;
   state.history = [];
   state.historyJob = null;
+});
+elements.previewClose.addEventListener("click", () => {
+  elements.previewPanel.hidden = true;
+  state.preview = null;
+  state.previewJob = null;
 });
 
 renderMetrics();

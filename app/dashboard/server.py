@@ -25,6 +25,10 @@ from app.dashboard.review_resolution import (
     ApplicationReviewResolutionService,
     ReviewResolutionStatus,
 )
+from app.dashboard.application_preview import (
+    ApplicationPreviewService,
+    ApplicationPreviewStatus,
+)
 from app.jobs.composition import build_job_pipeline
 from app.tracking.database import DEFAULT_DB_PATH, JobDatabase
 from app.tracking.excel_tracker import ExcelTracker
@@ -54,12 +58,14 @@ class DashboardServer(ThreadingHTTPServer):
         static_dir: Path,
         target_review_service: ApplicationTargetReviewService | None,
         review_resolution_service: ApplicationReviewResolutionService | None,
+        application_preview_service: ApplicationPreviewService | None,
     ) -> None:
         super().__init__(server_address, request_handler)
         self.reader = reader
         self.static_dir = static_dir
         self.target_review_service = target_review_service
         self.review_resolution_service = review_resolution_service
+        self.application_preview_service = application_preview_service
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -111,6 +117,20 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         ):
             self._serve_review_history(
                 int(history_match.group(1)),
+                include_body=include_body,
+            )
+            return
+
+        preview_match = re.fullmatch(
+            r"/api/jobs/([1-9][0-9]*)/application-preview",
+            path,
+        )
+        if (
+            preview_match
+            and self.server.application_preview_service is not None
+        ):
+            self._serve_application_preview(
+                int(preview_match.group(1)),
                 include_body=include_body,
             )
             return
@@ -174,10 +194,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         reviewer = self.server.target_review_service
         resolver = self.server.review_resolution_service
+        previewer = self.server.application_preview_service
         database = (
             reviewer.database
             if reviewer is not None
-            else resolver.database if resolver is not None else None
+            else resolver.database
+            if resolver is not None
+            else previewer.database if previewer is not None else None
         )
         if database is not None:
             snapshot = deepcopy(snapshot)
@@ -208,6 +231,62 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self._send_json(
             HTTPStatus.OK,
             snapshot,
+            include_body=include_body,
+        )
+
+    def _serve_application_preview(
+        self,
+        job_id: int,
+        *,
+        include_body: bool,
+    ) -> None:
+        try:
+            result = self.server.application_preview_service.preview(job_id)
+        except Exception:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "Application preview could not be loaded."},
+                include_body=include_body,
+            )
+            return
+
+        status_code = {
+            ApplicationPreviewStatus.READY: HTTPStatus.OK,
+            ApplicationPreviewStatus.BLOCKED: HTTPStatus.OK,
+            ApplicationPreviewStatus.NOT_FOUND: HTTPStatus.NOT_FOUND,
+            ApplicationPreviewStatus.FAILED: HTTPStatus.INTERNAL_SERVER_ERROR,
+        }[result.status]
+        job = result.job
+        self._send_json(
+            status_code,
+            {
+                "status": result.status.value,
+                "reason": result.reason,
+                "job_id": result.job_id,
+                "job": (
+                    {
+                        "company": job.company,
+                        "title": job.title,
+                        "location": job.location,
+                        "fit_score": job.fit_score,
+                        "application_status": job.status.value,
+                    }
+                    if job is not None
+                    else None
+                ),
+                "source_url": result.source_url,
+                "application_url": result.application_url,
+                "ats_provider": result.provider.value,
+                "resume": result.resume,
+                "safety": {
+                    "browser_started": result.browser_started,
+                    "workflow_ran": result.workflow_ran,
+                    "external_authorization_required": True,
+                    "fields_filled": False,
+                    "files_uploaded": False,
+                    "may_submit": result.may_submit,
+                },
+            },
             include_body=include_body,
         )
 
@@ -467,6 +546,7 @@ def create_dashboard_server(
     static_dir: Path = STATIC_DIR,
     target_review_service: ApplicationTargetReviewService | None = None,
     review_resolution_service: ApplicationReviewResolutionService | None = None,
+    application_preview_service: ApplicationPreviewService | None = None,
 ) -> DashboardServer:
     if not isinstance(port, int) or not 0 <= port <= 65535:
         raise ValueError("port must be an integer from 0 to 65535")
@@ -488,6 +568,7 @@ def create_dashboard_server(
         static_dir=static_dir,
         target_review_service=target_review_service,
         review_resolution_service=review_resolution_service,
+        application_preview_service=application_preview_service,
     )
 
 
@@ -533,12 +614,14 @@ def main(argv: list[str] | None = None) -> int:
             database=database,
             tracker=tracker,
         )
+        preview_service = ApplicationPreviewService(database=database)
         server = create_dashboard_server(
             reader=TrackerWorkbookReader(args.workbook),
             host=args.host,
             port=args.port,
             target_review_service=reviewer,
             review_resolution_service=resolution_service,
+            application_preview_service=preview_service,
         )
     except (OSError, ValueError) as exc:
         print(f"Dashboard could not start: {exc}", file=sys.stderr)
