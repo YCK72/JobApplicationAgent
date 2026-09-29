@@ -826,3 +826,253 @@ def test_real_execution_boundaries_compose_with_explicit_external_authorization(
     writer.upload_file.assert_not_called()
 
     assert job.status == ApplicationStatus.READY_TO_APPLY
+
+def test_unexpected_preparation_exception_fails_closed():
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    browser_executor = MagicMock()
+
+    preparation_service.prepare.side_effect = RuntimeError(
+        "simulated preparation failure"
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        browser_executor=browser_executor,
+    )
+
+    pipeline_result = MagicMock()
+
+    result = workflow.run(pipeline_result)
+
+    assert (
+        result.status
+        == ApplicationWorkflowStatus.FAILED
+    )
+    assert result.succeeded is False
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+    assert (
+        "simulated preparation failure"
+        in result.reason
+    )
+
+    inspection_service.inspect.assert_not_called()
+    form_executor.authorize.assert_not_called()
+    execution_guard.authorize.assert_not_called()
+    browser_executor.execute.assert_not_called()
+
+
+def test_unexpected_inspection_exception_fails_closed():
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    browser_executor = MagicMock()
+
+    job = MagicMock()
+    job.resume_used = None
+
+    preparation = MagicMock()
+    preparation.outcome = PreparationOutcome.READY
+    preparation.job = job
+    preparation.job_id = 1
+
+    preparation_service.prepare.return_value = preparation
+
+    inspection_service.inspect.side_effect = RuntimeError(
+        "simulated inspection failure"
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        browser_executor=browser_executor,
+    )
+
+    result = workflow.run(MagicMock())
+
+    assert (
+        result.status
+        == ApplicationWorkflowStatus.FAILED
+    )
+    assert result.succeeded is False
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+    assert (
+        "simulated inspection failure"
+        in result.reason
+    )
+
+    form_executor.authorize.assert_not_called()
+    execution_guard.authorize.assert_not_called()
+    browser_executor.execute.assert_not_called()
+
+def test_unexpected_form_authorization_exception_fails_closed():
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    browser_executor = MagicMock()
+
+    job = MagicMock()
+    job.resume_used = "data/resumes/sde_resume.pdf"
+
+    preparation = MagicMock()
+    preparation.outcome = PreparationOutcome.READY
+    preparation.job = job
+    preparation.job_id = 1
+    preparation_service.prepare.return_value = preparation
+
+    inspection = MagicMock()
+    inspection.outcome = InspectionOutcome.INSPECTED
+    inspection.plan = MagicMock()
+    inspection_service.inspect.return_value = inspection
+
+    form_executor.authorize.side_effect = RuntimeError(
+        "simulated form authorization failure"
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        browser_executor=browser_executor,
+    )
+
+    result = workflow.run(MagicMock())
+
+    assert result.status == ApplicationWorkflowStatus.FAILED
+    assert result.succeeded is False
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+    assert (
+        "simulated form authorization failure"
+        in result.reason
+    )
+
+    execution_guard.authorize.assert_not_called()
+    browser_executor.execute.assert_not_called()
+
+
+def test_unexpected_target_authorization_exception_fails_closed():
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    browser_executor = MagicMock()
+
+    job = MagicMock()
+    job.url = "https://example.com/application"
+    job.resume_used = None
+
+    preparation = MagicMock()
+    preparation.outcome = PreparationOutcome.READY
+    preparation.job = job
+    preparation.job_id = 1
+    preparation_service.prepare.return_value = preparation
+
+    inspection = MagicMock()
+    inspection.outcome = InspectionOutcome.INSPECTED
+    inspection.plan = MagicMock()
+    inspection_service.inspect.return_value = inspection
+
+    execution_plan = MagicMock()
+    execution_plan.status = ExecutionPlanStatus.AUTHORIZED
+    execution_plan.may_execute = True
+    form_executor.authorize.return_value = execution_plan
+
+    execution_guard.authorize.side_effect = RuntimeError(
+        "simulated target authorization failure"
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        browser_executor=browser_executor,
+    )
+
+    result = workflow.run(
+        MagicMock(),
+        allow_external=True,
+    )
+
+    assert result.status == ApplicationWorkflowStatus.FAILED
+    assert result.succeeded is False
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+    assert (
+        "simulated target authorization failure"
+        in result.reason
+    )
+
+    browser_executor.execute.assert_not_called()
+
+
+def test_unexpected_browser_execution_exception_fails_closed():
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    browser_executor = MagicMock()
+
+    job = MagicMock()
+    job.url = "https://example.com/application"
+    job.resume_used = None
+
+    preparation = MagicMock()
+    preparation.outcome = PreparationOutcome.READY
+    preparation.job = job
+    preparation.job_id = 1
+    preparation_service.prepare.return_value = preparation
+
+    inspection = MagicMock()
+    inspection.outcome = InspectionOutcome.INSPECTED
+    inspection.plan = MagicMock()
+    inspection_service.inspect.return_value = inspection
+
+    execution_plan = MagicMock()
+    execution_plan.status = ExecutionPlanStatus.AUTHORIZED
+    execution_plan.may_execute = True
+    form_executor.authorize.return_value = execution_plan
+
+    target_authorization = MagicMock()
+    target_authorization.status = ExecutionTargetStatus.AUTHORIZED
+    target_authorization.may_mutate = True
+    execution_guard.authorize.return_value = target_authorization
+
+    browser_executor.execute.side_effect = RuntimeError(
+        "simulated browser execution failure"
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        browser_executor=browser_executor,
+    )
+
+    result = workflow.run(
+        MagicMock(),
+        allow_external=True,
+    )
+
+    assert result.status == ApplicationWorkflowStatus.FAILED
+    assert result.succeeded is False
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+    assert (
+        "simulated browser execution failure"
+        in result.reason
+    )

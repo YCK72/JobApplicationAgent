@@ -129,10 +129,20 @@ class ApplicationBatchRunner:
         results: list[ApplicationBatchItem] = []
 
         for pipeline_result in pipeline_results:
-            workflow_result = self.coordinator.run(
-                pipeline_result,
-                allow_external=allow_external,
-            )
+            try:
+                workflow_result = self.coordinator.run(
+                    pipeline_result,
+                    allow_external=allow_external,
+                )
+            except Exception as exc:
+                workflow_result = ApplicationWorkflowResult(
+                    status=ApplicationWorkflowStatus.FAILED,
+                    reason=(
+                        "Unexpected application runtime failure: "
+                        f"{exc}"
+                    ),
+                    completed_actions=0,
+                )
 
             results.append(
                 ApplicationBatchItem(

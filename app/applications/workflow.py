@@ -83,6 +83,10 @@ class ApplicationWorkflow:
 
     Each existing service remains responsible for its own safety
     boundary.
+
+    Unexpected exceptions crossing those service boundaries are converted
+    into FAILED workflow results. This prevents an unexpected runtime
+    failure from being mistaken for successful application preparation.
     """
 
     def __init__(
@@ -113,6 +117,39 @@ class ApplicationWorkflow:
         mutations completed and the form is ready for human review.
 
         It never means that the application was submitted.
+
+        Unexpected lower-layer exceptions fail closed as FAILED workflow
+        results. Individual services retain responsibility for rollback
+        of any state they mutate before raising.
+        """
+
+        try:
+            return self._run_controlled(
+                pipeline_result,
+                allow_external=allow_external,
+            )
+        except Exception as exc:
+            return ApplicationWorkflowResult(
+                status=ApplicationWorkflowStatus.FAILED,
+                reason=(
+                    "Unexpected application workflow failure: "
+                    f"{exc}"
+                ),
+                completed_actions=0,
+            )
+
+    def _run_controlled(
+        self,
+        pipeline_result: PipelineResult,
+        *,
+        allow_external: bool,
+    ) -> ApplicationWorkflowResult:
+        """
+        Execute the existing controlled workflow stages.
+
+        This method assumes exception containment is owned by run().
+        Normal typed failure results continue to be handled at the
+        specific boundary that produced them.
         """
 
         preparation = self._preparation_service.prepare(

@@ -434,3 +434,174 @@ def test_discovery_errors_do_not_become_application_attempts():
 
     assert discovery_result.error_count == 2
 
+def test_unexpected_coordinator_exception_becomes_failed_result():
+    coordinator = MagicMock()
+
+    pipeline_result = make_pipeline_result(
+        PipelineOutcome.AUTO_READY,
+        company="Failing Company",
+        job_id=1,
+    )
+
+    coordinator.run.side_effect = RuntimeError(
+        "simulated unexpected runtime failure"
+    )
+
+    runner = ApplicationBatchRunner(
+        coordinator=coordinator,
+    )
+
+    result = runner.run(
+        [pipeline_result],
+        allow_external=True,
+    )
+
+    assert result.total_count == 1
+    assert result.attempted_count == 1
+    assert result.failed_count == 1
+    assert result.skipped_count == 0
+
+    workflow_result = result.results[0].workflow_result
+
+    assert (
+        workflow_result.status
+        == ApplicationWorkflowStatus.FAILED
+    )
+    assert workflow_result.succeeded is False
+    assert workflow_result.completed_actions == 0
+    assert workflow_result.may_submit is False
+    assert (
+        "simulated unexpected runtime failure"
+        in workflow_result.reason
+    )
+
+
+def test_unexpected_failure_does_not_stop_later_jobs():
+    coordinator = MagicMock()
+
+    first = make_pipeline_result(
+        PipelineOutcome.AUTO_READY,
+        company="Failing Company",
+        job_id=1,
+    )
+
+    second = make_pipeline_result(
+        PipelineOutcome.AUTO_READY,
+        company="Successful Company",
+        job_id=2,
+    )
+
+    coordinator.run.side_effect = [
+        RuntimeError(
+            "first job failed unexpectedly"
+        ),
+        make_workflow_result(
+            ApplicationWorkflowStatus.READY_FOR_REVIEW,
+            completed_actions=3,
+        ),
+    ]
+
+    runner = ApplicationBatchRunner(
+        coordinator=coordinator,
+    )
+
+    result = runner.run(
+        [first, second],
+    )
+
+    assert result.total_count == 2
+    assert result.attempted_count == 2
+    assert result.failed_count == 1
+    assert result.ready_for_review_count == 1
+    assert result.skipped_count == 0
+
+    assert (
+        result.results[0].workflow_result.status
+        == ApplicationWorkflowStatus.FAILED
+    )
+
+    assert (
+        result.results[1].workflow_result.status
+        == ApplicationWorkflowStatus.READY_FOR_REVIEW
+    )
+
+    assert coordinator.run.call_args_list == [
+        call(
+            first,
+            allow_external=False,
+        ),
+        call(
+            second,
+            allow_external=False,
+        ),
+    ]
+
+
+def test_non_auto_ready_exception_is_not_counted_as_application_failure():
+    coordinator = MagicMock()
+
+    manual = make_pipeline_result(
+        PipelineOutcome.MANUAL_REVIEW,
+        company="Manual Company",
+        job_id=1,
+    )
+
+    coordinator.run.side_effect = RuntimeError(
+        "simulated coordinator failure"
+    )
+
+    runner = ApplicationBatchRunner(
+        coordinator=coordinator,
+    )
+
+    result = runner.run([manual])
+
+    assert result.total_count == 1
+    assert result.attempted_count == 0
+    assert result.failed_count == 0
+    assert result.skipped_count == 1
+
+    assert (
+        result.results[0].workflow_result.status
+        == ApplicationWorkflowStatus.FAILED
+    )
+    assert result.results[0].workflow_result.may_submit is False
+
+
+def test_failure_isolation_does_not_add_submission_capability():
+    coordinator = MagicMock()
+
+    pipeline_result = make_pipeline_result(
+        PipelineOutcome.AUTO_READY,
+        company="Failing Company",
+        job_id=1,
+    )
+
+    coordinator.run.side_effect = RuntimeError(
+        "simulated failure"
+    )
+
+    runner = ApplicationBatchRunner(
+        coordinator=coordinator,
+    )
+
+    result = runner.run([pipeline_result])
+
+    assert result.failed_count == 1
+
+    workflow_result = result.results[0].workflow_result
+
+    assert workflow_result.may_submit is False
+
+    assert not hasattr(
+        runner,
+        "submit",
+    )
+    assert not hasattr(
+        runner,
+        "confirm_submission",
+    )
+    assert not hasattr(
+        runner,
+        "submission_confirmation_service",
+    )
