@@ -1,6 +1,9 @@
 "use strict";
 
-const state = { jobs: [], source: null, loading: false };
+const state = {
+  jobs: [], source: null, loading: false,
+  editingJobId: null, targetDraft: "",
+};
 const elements = {
   metrics: document.querySelector("#metrics"),
   jobsBody: document.querySelector("#jobs-body"),
@@ -13,6 +16,7 @@ const elements = {
   method: document.querySelector("#method-filter"),
   sort: document.querySelector("#sort"),
   warning: document.querySelector("#warning"),
+  reviewNotice: document.querySelector("#review-notice"),
   refresh: document.querySelector("#refresh-button"),
   syncDot: document.querySelector("#sync-dot"),
   syncLabel: document.querySelector("#sync-label"),
@@ -138,6 +142,43 @@ function renderTable() {
       link.setAttribute("aria-label", `Open ${job.title || "job"} application`);
       linkCell.append(link);
     }
+    if (job.target_review_eligible && job.job_id) {
+      if (state.editingJobId === job.job_id) {
+        const form = createNode("form", "target-form");
+        const input = createNode("input", "target-input");
+        input.type = "url";
+        input.required = true;
+        input.placeholder = "Paste Greenhouse application URL";
+        input.value = state.targetDraft;
+        input.setAttribute("aria-label", `Application URL for ${job.title || "job"}`);
+        input.addEventListener("input", () => { state.targetDraft = input.value; });
+        const save = createNode("button", "target-save", "Save");
+        save.type = "submit";
+        const cancel = createNode("button", "target-cancel", "Cancel");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => {
+          state.editingJobId = null;
+          state.targetDraft = "";
+          renderTable();
+        });
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          save.disabled = true;
+          await assignTarget(job.job_id);
+        });
+        form.append(input, save, cancel);
+        linkCell.append(form);
+      } else {
+        const review = createNode("button", "target-review", "Set target");
+        review.type = "button";
+        review.addEventListener("click", () => {
+          state.editingJobId = job.job_id;
+          state.targetDraft = "";
+          renderTable();
+        });
+        linkCell.append(review);
+      }
+    }
 
     row.append(
       opportunity,
@@ -151,6 +192,29 @@ function renderTable() {
     return row;
   });
   replaceChildren(elements.jobsBody, rows);
+}
+
+async function assignTarget(jobId) {
+  try {
+    const response = await fetch(`/api/jobs/${jobId}/application-target`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ application_url: state.targetDraft }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || payload.reason || "Target could not be saved.");
+    state.editingJobId = null;
+    state.targetDraft = "";
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice success";
+    elements.reviewNotice.textContent = `Application target saved. Pipeline result: ${label(payload.pipeline_outcome)}. ${payload.reason}`;
+    await refresh();
+  } catch (error) {
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice error";
+    elements.reviewNotice.textContent = error instanceof Error ? error.message : "Target could not be saved.";
+    renderTable();
+  }
 }
 
 function renderStatusBreakdown() {

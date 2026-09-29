@@ -122,6 +122,7 @@ class JobPipeline:
     def _persist(
         self,
         job: Job,
+        existing_job_id: int | None = None,
     ) -> int:
         """
         Persist the fully processed job.
@@ -129,17 +130,25 @@ class JobPipeline:
         SQLite remains the authoritative source of truth.
         """
 
-        return self.database.add_job(job)
+        if existing_job_id is None:
+            return self.database.add_job(job)
+        self.database.update_job(existing_job_id, job)
+        return existing_job_id
 
     def _find_duplicate(
         self,
         job: Job,
+        existing_job_id: int | None = None,
     ):
         """
         Compare the incoming job with jobs already stored in SQLite.
         """
 
-        existing_jobs = self.database.get_all_jobs()
+        existing_jobs = [
+            existing_job
+            for job_id, existing_job in self.database.get_jobs_with_ids()
+            if job_id != existing_job_id
+        ]
 
         return JobDeduplicator.find_duplicate(
             job,
@@ -155,6 +164,33 @@ class JobPipeline:
         deterministic intelligence and routing pipeline.
         """
 
+        return self._process(job, existing_job_id=None)
+
+    def reprocess(self, job_id: int, job: Job) -> PipelineResult:
+        """Run a reviewed persisted job again without creating a new row."""
+
+        if isinstance(job_id, bool) or not isinstance(job_id, int) or job_id <= 0:
+            raise ValueError("job_id must be a positive integer")
+        stored = self.database.get_job_by_id(job_id)
+        if stored is None:
+            raise ValueError(f"Job ID {job_id} does not exist.")
+        if stored.url.encoded_string() != job.url.encoded_string():
+            raise ValueError("Reprocessed job URL does not match the persisted job.")
+
+        job.status = ApplicationStatus.DISCOVERED
+        job.fit_score = None
+        job.fit_explanation = None
+        job.resume_used = None
+        return self._process(job, existing_job_id=job_id)
+
+    def _process(
+        self,
+        job: Job,
+        *,
+        existing_job_id: int | None,
+    ) -> PipelineResult:
+        """Process a new record or replace one explicitly selected record."""
+
         # -----------------------------------------------------
         # 1. Company normalization and routing
         # -----------------------------------------------------
@@ -165,7 +201,7 @@ class JobPipeline:
         # 2. Duplicate detection
         # -----------------------------------------------------
 
-        duplicate_result = self._find_duplicate(job)
+        duplicate_result = self._find_duplicate(job, existing_job_id)
 
         if duplicate_result.is_duplicate:
             reason_text = (
@@ -202,7 +238,7 @@ class JobPipeline:
             # Persist it rather than silently discarding it.
             job.resume_used = None
 
-            job_id = self._persist(job)
+            job_id = self._persist(job, existing_job_id)
 
             return PipelineResult(
                 job=job,
@@ -227,7 +263,7 @@ class JobPipeline:
                 "Pipeline: blocked company; application workflow stopped.",
             )
 
-            job_id = self._persist(job)
+            job_id = self._persist(job, existing_job_id)
 
             return PipelineResult(
                 job=job,
@@ -264,7 +300,7 @@ class JobPipeline:
                     else PipelineOutcome.FILTERED_OUT
                 ),
                 reason=eligibility.reason,
-                job_id=self._persist(job),
+                job_id=self._persist(job, existing_job_id),
             )
 
         # LinkedIn is a discovery page, not an application endpoint.  Keep
@@ -285,7 +321,7 @@ class JobPipeline:
                 job=job,
                 outcome=PipelineOutcome.MANUAL_REVIEW,
                 reason=reason,
-                job_id=self._persist(job),
+                job_id=self._persist(job, existing_job_id),
             )
 
         # -----------------------------------------------------
@@ -330,7 +366,7 @@ class JobPipeline:
                 "Pipeline: manual resume tailoring and application required.",
             )
 
-            job_id = self._persist(job)
+            job_id = self._persist(job, existing_job_id)
 
             return PipelineResult(
                 job=job,
@@ -367,7 +403,7 @@ class JobPipeline:
                 ),
             )
 
-            job_id = self._persist(job)
+            job_id = self._persist(job, existing_job_id)
 
             return PipelineResult(
                 job=job,
@@ -392,7 +428,7 @@ class JobPipeline:
                 ),
             )
 
-            job_id = self._persist(job)
+            job_id = self._persist(job, existing_job_id)
 
             return PipelineResult(
                 job=job,
@@ -444,7 +480,7 @@ class JobPipeline:
         # 10. Persist final state
         # -----------------------------------------------------
 
-        job_id = self._persist(job)
+        job_id = self._persist(job, existing_job_id)
 
         return PipelineResult(
             job=job,

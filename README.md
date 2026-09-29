@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1323 passed`
+**Latest verified full regression:** `1332 passed`
 
-**Most recently completed milestone:** **60A — resolve discovered listings to supported ATS application targets**
+**Most recently completed milestone:** **60B — reviewed application-target assignment**
 
-**Current development milestone:** **60B — reviewed target assignment and additional ATS coverage**
+**Current development milestone:** **60C — add a fully validated Lever adapter**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -356,23 +356,25 @@ pytest -q
 The latest verified result is:
 
 ```text
-1307 passed
+1332 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
 
 ### 8. Open the application dashboard
 
-Generate or refresh the Excel tracker, then start the local read-only dashboard:
+Generate or refresh the Excel tracker, then start the local dashboard:
 
 ```powershell
 python -m app.dashboard.server --open-browser
 ```
 
 The dashboard reads `data/exports/Job_Application_Tracker.xlsx` and refreshes
-the browser view every five seconds. It does not edit the workbook or change
-application state. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and
-custom-path instructions.
+the browser view every five seconds. Unresolved LinkedIn records expose a
+guarded form for assigning a reviewed Greenhouse target. A valid assignment
+updates the same database row, reruns the deterministic pipeline, and refreshes
+Excel. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
+instructions.
 
 ### 9. Discover jobs into the live tracker
 

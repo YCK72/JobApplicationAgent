@@ -12,7 +12,7 @@
     <div>
       <p class="eyebrow">APPLICATION AUTOMATION</p>
       <h1>Job Application Dashboard</h1>
-      <p class="subtitle">A live, read-only view of your Excel application tracker.</p>
+      <p class="subtitle">A live view of your Excel tracker with guarded application-target review.</p>
     </div>
     <div class="sync-card" aria-live="polite">
       <span class="sync-dot" id="sync-dot"></span>
@@ -26,6 +26,7 @@
 
   <main>
     <div id="warning" class="warning" role="status" hidden></div>
+    <div id="review-notice" class="review-notice" role="status" hidden></div>
 
     <section aria-labelledby="overview-title">
       <div class="section-heading">
@@ -101,13 +102,13 @@
         <p class="eyebrow">DISTRIBUTION</p>
         <h2 id="status-title">By status</h2>
         <div id="status-breakdown" class="status-breakdown"></div>
-        <p class="aside-note">The dashboard refreshes every five seconds while this page is open.</p>
+        <p class="aside-note">The dashboard refreshes every five seconds. Unresolved LinkedIn jobs can receive a reviewed Greenhouse application URL here.</p>
       </aside>
     </section>
   </main>
 
   <footer>
-    <span>Read-only dashboard</span>
+    <span>Local application review dashboard</span>
     <span>Excel remains your visible tracker</span>
   </footer>
   <script src="/static/app.js" defer></script>

@@ -3,12 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from threading import Thread
+from unittest.mock import MagicMock
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
 
 from app.dashboard.server import create_dashboard_server
+from app.applications.target_review import (
+    ApplicationTargetReviewService,
+    TargetReviewResult,
+    TargetReviewStatus,
+)
+from app.jobs.pipeline import PipelineOutcome
 from app.dashboard.tracker_reader import (
     DashboardDataError,
     TrackerWorkbookReader,
@@ -210,6 +217,8 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
         with urlopen(base_url + "/static/app.js", timeout=5) as response:
             script = response.read().decode("utf-8")
             assert "setInterval" in script
+            assert "application-target" in script
+            assert "Set target" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()
@@ -263,3 +272,137 @@ def test_http_server_rejects_writes(tmp_path: Path) -> None:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_target_review_api_assigns_explicit_url(tmp_path: Path) -> None:
+    reviewer = MagicMock()
+    reviewer.assign.return_value = TargetReviewResult(
+        status=TargetReviewStatus.UPDATED,
+        reason="Reprocessed.",
+        job_id=7,
+        application_url=(
+            "https://job-boards.greenhouse.io/example/jobs/123"
+        ),
+        pipeline_outcome=PipelineOutcome.AUTO_READY,
+        export_path=tmp_path / "tracker.xlsx",
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        target_review_service=reviewer,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        body = json.dumps({
+            "application_url": (
+                "https://job-boards.greenhouse.io/example/jobs/123"
+            )
+        }).encode("utf-8")
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/application-target",
+            method="POST",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+        assert response.status == 200
+        assert payload["status"] == "UPDATED"
+        assert payload["pipeline_outcome"] == "AUTO_READY"
+        reviewer.assign.assert_called_once_with(
+            job_id=7,
+            application_url=(
+                "https://job-boards.greenhouse.io/example/jobs/123"
+            ),
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_editable_jobs_snapshot_exposes_only_eligible_record_id(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(tmp_path / "review.db")
+    job_id = database.add_job(Job(
+        company="Review Company",
+        title="Software Engineer I",
+        location="Seattle, WA",
+        url="https://www.linkedin.com/jobs/view/98765",
+        source="linkedin_composio",
+        status=ApplicationStatus.NEEDS_REVIEW,
+        application_method=ApplicationMethod.REVIEW,
+    ))
+    workbook = tmp_path / "review.xlsx"
+    tracker = ExcelTracker(database, workbook)
+    tracker.generate()
+    reviewer = ApplicationTargetReviewService(
+        database=database,
+        pipeline=MagicMock(),
+        tracker=tracker,
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(workbook),
+        target_review_service=reviewer,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        with urlopen(
+            f"http://127.0.0.1:{server.server_port}/api/jobs",
+            timeout=5,
+        ) as response:
+            payload = json.load(response)
+        assert payload["jobs"][0]["job_id"] == job_id
+        assert payload["jobs"][0]["target_review_eligible"] is True
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_target_review_api_rejects_non_json_body(tmp_path: Path) -> None:
+    reviewer = MagicMock()
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        target_review_service=reviewer,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/application-target",
+            method="POST",
+            data=b"application_url=https://example.com",
+            headers={"Content-Type": "text/plain"},
+        )
+        with pytest.raises(HTTPError) as error:
+            urlopen(request, timeout=5)
+        assert error.value.code == 415
+        reviewer.assign.assert_not_called()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_editable_dashboard_requires_loopback_binding(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="loopback"):
+        create_dashboard_server(
+            reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+            target_review_service=MagicMock(),
+            host="0.0.0.0",
+            port=0,
+        )

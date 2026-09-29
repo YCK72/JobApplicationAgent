@@ -283,6 +283,20 @@ class JobDatabase:
 
         return self._row_to_job(row)
 
+    def get_job_with_id_by_url(self, url: str) -> tuple[int, Job] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM jobs
+                WHERE url = ?
+                """,
+                (url,),
+            ).fetchone()
+        if row is None:
+            return None
+        return int(row["id"]), self._row_to_job(row)
+
     def get_all_jobs(self) -> list[Job]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -315,6 +329,57 @@ class JobDatabase:
     # ---------------------------------------------------------
     # Updates
     # ---------------------------------------------------------
+
+    def update_job(self, job_id: int, job: Job) -> None:
+        """Replace one persisted job's normalized state in place."""
+
+        now = datetime.now().isoformat()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET company = ?, title = ?, location = ?, url = ?,
+                    application_url = ?, source = ?, description = ?,
+                    external_job_id = ?, date_posted = ?, category = ?,
+                    seniority = ?, fit_score = ?, fit_explanation = ?,
+                    priority_company = ?, company_rule = ?,
+                    application_method = ?, status = ?, resume_used = ?,
+                    date_found = ?, date_applied = ?, notes = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    job.company,
+                    job.title,
+                    job.location,
+                    job.url.encoded_string(),
+                    (
+                        job.application_url.encoded_string()
+                        if job.application_url
+                        else None
+                    ),
+                    job.source,
+                    job.description,
+                    job.external_job_id,
+                    job.date_posted.isoformat() if job.date_posted else None,
+                    job.category.value,
+                    job.seniority.value,
+                    job.fit_score,
+                    job.fit_explanation,
+                    int(job.priority_company),
+                    job.company_rule.value,
+                    job.application_method.value,
+                    job.status.value,
+                    job.resume_used,
+                    job.date_found.isoformat(),
+                    job.date_applied.isoformat() if job.date_applied else None,
+                    job.notes,
+                    now,
+                    job_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError(f"Job ID {job_id} does not exist.")
+            connection.commit()
 
     def update_status(
         self,
