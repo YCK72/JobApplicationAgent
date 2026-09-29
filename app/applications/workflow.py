@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import Enum
 
@@ -25,7 +27,10 @@ from app.applications.router import (
 )
 from app.jobs.pipeline import PipelineResult
 
-
+ExecutionSessionFactory = Callable[
+    [str],
+    AbstractContextManager[BrowserFormExecutor],
+]
 class ApplicationWorkflowStatus(str, Enum):
     """
     Outcome of one controlled application-preparation workflow.
@@ -90,19 +95,39 @@ class ApplicationWorkflow:
     """
 
     def __init__(
-        self,
-        *,
-        preparation_service: ApplicationPreparationService,
-        inspection_service: ApplicationInspectionService,
-        form_executor: ApplicationFormExecutor,
-        execution_guard: ExternalExecutionGuard,
-        browser_executor: BrowserFormExecutor,
+            self,
+            *,
+            preparation_service: ApplicationPreparationService,
+            inspection_service: ApplicationInspectionService,
+            form_executor: ApplicationFormExecutor,
+            execution_guard: ExternalExecutionGuard,
+            browser_executor: BrowserFormExecutor | None = None,
+            execution_session_factory: ExecutionSessionFactory | None = None,
     ) -> None:
+        if (
+                browser_executor is None
+                and execution_session_factory is None
+        ):
+            raise ValueError(
+                "ApplicationWorkflow requires either a browser executor "
+                "or an execution-session factory."
+            )
+
+        if (
+                browser_executor is not None
+                and execution_session_factory is not None
+        ):
+            raise ValueError(
+                "ApplicationWorkflow cannot use both a browser executor "
+                "and an execution-session factory."
+            )
+
         self._preparation_service = preparation_service
         self._inspection_service = inspection_service
         self._form_executor = form_executor
         self._execution_guard = execution_guard
         self._browser_executor = browser_executor
+        self._execution_session_factory = execution_session_factory
 
     def run(
         self,
@@ -209,10 +234,24 @@ class ApplicationWorkflow:
                 target_authorization.reason
             )
 
-        browser_result = self._browser_executor.execute(
-            execution_plan,
-            target_authorization=target_authorization,
-        )
+        if self._execution_session_factory is not None:
+            with self._execution_session_factory(
+                    str(job.url)
+            ) as browser_executor:
+                browser_result = browser_executor.execute(
+                    execution_plan,
+                    target_authorization=target_authorization,
+                )
+        else:
+            if self._browser_executor is None:
+                raise RuntimeError(
+                    "Application workflow has no browser execution boundary."
+                )
+
+            browser_result = self._browser_executor.execute(
+                execution_plan,
+                target_authorization=target_authorization,
+            )
 
         if (
             browser_result.status

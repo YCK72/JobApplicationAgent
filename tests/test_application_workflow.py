@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock, call
-
+from contextlib import contextmanager
 
 from app.applications.browser_form_executor import (
     BrowserExecutionResult,
@@ -1074,5 +1074,337 @@ def test_unexpected_browser_execution_exception_fails_closed():
     assert result.may_submit is False
     assert (
         "simulated browser execution failure"
+        in result.reason
+    )
+
+def test_execution_session_is_opened_only_after_target_authorization():
+    job = make_job()
+    pipeline_result = make_pipeline_result(job)
+
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    browser_executor = MagicMock()
+    execution_session_factory = MagicMock()
+
+    preparation_service.prepare.return_value = (
+        make_preparation_result(job)
+    )
+
+    form_plan = make_form_plan()
+
+    inspection_service.inspect.return_value = (
+        make_inspection_result(
+            job,
+            form_plan,
+        )
+    )
+
+    execution_plan = make_execution_plan()
+    target_authorization = make_target_authorization()
+    browser_result = make_browser_result()
+
+    form_executor.authorize.return_value = execution_plan
+    execution_guard.authorize.return_value = (
+        target_authorization
+    )
+    browser_executor.execute.return_value = browser_result
+
+    events = []
+
+    execution_guard.authorize.side_effect = (
+        lambda target_url, allow_external=False: (
+            events.append("authorize_target"),
+            target_authorization,
+        )[-1]
+    )
+
+    @contextmanager
+    def execution_session():
+        events.append("open_execution_session")
+        try:
+            yield browser_executor
+        finally:
+            events.append("close_execution_session")
+
+    execution_session_factory.side_effect = (
+        lambda target_url: execution_session()
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        execution_session_factory=execution_session_factory,
+    )
+
+    result = workflow.run(
+        pipeline_result,
+        allow_external=True,
+    )
+
+    assert result.status == (
+        ApplicationWorkflowStatus.READY_FOR_REVIEW
+    )
+    assert result.may_submit is False
+
+    assert events == [
+        "authorize_target",
+        "open_execution_session",
+        "close_execution_session",
+    ]
+
+    execution_session_factory.assert_called_once_with(
+        TARGET_URL
+    )
+
+    browser_executor.execute.assert_called_once_with(
+        execution_plan,
+        target_authorization=target_authorization,
+    )
+
+
+def test_blocked_target_never_opens_execution_session():
+    job = make_job()
+    pipeline_result = make_pipeline_result(job)
+
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    execution_session_factory = MagicMock()
+
+    preparation_service.prepare.return_value = (
+        make_preparation_result(job)
+    )
+
+    form_plan = make_form_plan()
+
+    inspection_service.inspect.return_value = (
+        make_inspection_result(
+            job,
+            form_plan,
+        )
+    )
+
+    form_executor.authorize.return_value = (
+        make_execution_plan()
+    )
+
+    execution_guard.authorize.return_value = (
+        ExecutionTargetAuthorization(
+            status=ExecutionTargetStatus.BLOCKED,
+            reason="External execution denied.",
+            target_url=None,
+        )
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        execution_session_factory=execution_session_factory,
+    )
+
+    result = workflow.run(pipeline_result)
+
+    assert result.status == ApplicationWorkflowStatus.BLOCKED
+    assert result.may_submit is False
+
+    execution_session_factory.assert_not_called()
+
+
+def test_blocked_form_plan_never_opens_execution_session():
+    job = make_job()
+    pipeline_result = make_pipeline_result(job)
+
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    execution_session_factory = MagicMock()
+
+    preparation_service.prepare.return_value = (
+        make_preparation_result(job)
+    )
+
+    form_plan = make_form_plan()
+
+    inspection_service.inspect.return_value = (
+        make_inspection_result(
+            job,
+            form_plan,
+        )
+    )
+
+    form_executor.authorize.return_value = FormExecutionPlan(
+        actions=(),
+        status=ExecutionPlanStatus.BLOCKED,
+        reason="Execution plan blocked.",
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        execution_session_factory=execution_session_factory,
+    )
+
+    result = workflow.run(
+        pipeline_result,
+        allow_external=True,
+    )
+
+    assert result.status == ApplicationWorkflowStatus.BLOCKED
+    assert result.may_submit is False
+
+    execution_guard.authorize.assert_not_called()
+    execution_session_factory.assert_not_called()
+
+
+def test_execution_session_closes_when_browser_execution_raises():
+    job = make_job()
+    pipeline_result = make_pipeline_result(job)
+
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+    browser_executor = MagicMock()
+    execution_session_factory = MagicMock()
+
+    preparation_service.prepare.return_value = (
+        make_preparation_result(job)
+    )
+
+    form_plan = make_form_plan()
+
+    inspection_service.inspect.return_value = (
+        make_inspection_result(
+            job,
+            form_plan,
+        )
+    )
+
+    form_executor.authorize.return_value = (
+        make_execution_plan()
+    )
+
+    target_authorization = make_target_authorization()
+
+    execution_guard.authorize.return_value = (
+        target_authorization
+    )
+
+    browser_executor.execute.side_effect = RuntimeError(
+        "simulated execution failure"
+    )
+
+    events = []
+
+    @contextmanager
+    def execution_session():
+        events.append("open")
+        try:
+            yield browser_executor
+        finally:
+            events.append("close")
+
+    execution_session_factory.side_effect = (
+        lambda target_url: execution_session()
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        execution_session_factory=execution_session_factory,
+    )
+
+    result = workflow.run(
+        pipeline_result,
+        allow_external=True,
+    )
+
+    assert result.status == ApplicationWorkflowStatus.FAILED
+    assert result.succeeded is False
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+    assert "simulated execution failure" in result.reason
+
+    assert events == [
+        "open",
+        "close",
+    ]
+
+
+def test_execution_session_start_failure_fails_closed():
+    job = make_job()
+    pipeline_result = make_pipeline_result(job)
+
+    preparation_service = MagicMock()
+    inspection_service = MagicMock()
+    form_executor = MagicMock()
+    execution_guard = MagicMock()
+
+    preparation_service.prepare.return_value = (
+        make_preparation_result(job)
+    )
+
+    form_plan = make_form_plan()
+
+    inspection_service.inspect.return_value = (
+        make_inspection_result(
+            job,
+            form_plan,
+        )
+    )
+
+    form_executor.authorize.return_value = (
+        make_execution_plan()
+    )
+
+    execution_guard.authorize.return_value = (
+        make_target_authorization()
+    )
+
+    @contextmanager
+    def failing_execution_session():
+        raise RuntimeError(
+            "simulated execution session startup failure"
+        )
+        yield
+
+    execution_session_factory = MagicMock(
+        side_effect=lambda target_url: (
+            failing_execution_session()
+        )
+    )
+
+    workflow = ApplicationWorkflow(
+        preparation_service=preparation_service,
+        inspection_service=inspection_service,
+        form_executor=form_executor,
+        execution_guard=execution_guard,
+        execution_session_factory=execution_session_factory,
+    )
+
+    result = workflow.run(
+        pipeline_result,
+        allow_external=True,
+    )
+
+    assert result.status == ApplicationWorkflowStatus.FAILED
+    assert result.succeeded is False
+    assert result.completed_actions == 0
+    assert result.may_submit is False
+
+    assert (
+        "simulated execution session startup failure"
         in result.reason
     )
