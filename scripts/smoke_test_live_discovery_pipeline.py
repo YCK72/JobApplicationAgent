@@ -12,23 +12,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-from app.applications.resume_router import ResumeRouter
-from app.scoring.fit_gate import FitGate
 from app.discovery.greenhouse import GreenhouseJobSource
 from app.discovery.runner import DiscoveryRunner
-from app.jobs.classifier import RoleClassifier
-from app.jobs.company_router import CompanyRouter
-from app.jobs.filters import JobFilter
-from app.jobs.eligibility import JobEligibilityGate
+from app.jobs.composition import build_job_pipeline
 from app.jobs.pipeline import JobPipeline
-from app.scoring.fit_scorer import FitScorer
 from app.tracking.database import JobDatabase
 from app.tracking.excel_tracker import ExcelTracker
-from app.utils.config import (
-    load_candidate_config,
-    load_company_rules,
-    load_role_config,
-)
 
 
 # ============================================================
@@ -85,32 +74,7 @@ def build_pipeline(
     isolated Greenhouse smoke-test database.
     """
 
-    candidate_config = load_candidate_config()
-    company_rules = load_company_rules()
-    role_config = load_role_config()
-
-    return JobPipeline(
-        company_router=CompanyRouter(
-            company_rules
-        ),
-        classifier=RoleClassifier(
-            role_config
-        ),
-        job_filter=JobFilter(
-            role_config
-        ),
-        fit_scorer=FitScorer(
-            candidate_config
-        ),
-        fit_gate=FitGate(
-            role_config
-        ),
-        resume_router=ResumeRouter(
-            candidate_config
-        ),
-        database=database,
-        eligibility_gate=JobEligibilityGate(candidate_config),
-    )
+    return build_job_pipeline(database=database)
 
 
 def print_result(

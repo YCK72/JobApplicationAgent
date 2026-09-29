@@ -21,7 +21,7 @@ The user ID is an optional application-local identifier. This adapter calls the
 no-auth Composio Search toolkit; it does not use a LinkedIn connected account,
 LinkedIn cookies, or credentials from the ChatGPT connector. Composio API calls
 may consume account credits. No SDK or CLI installation is required. Existing
-`python-dotenv` support is used only by the smoke entry point.
+`python-dotenv` support is used by the local command entry points.
 
 ## Run from PyCharm
 
@@ -40,6 +40,30 @@ posting URLs to Composio, not your resume or candidate configuration.
 
 Exit codes: 0 = at least one posting processed, 1 = discovery/API failure,
 2 = invalid/missing configuration, 3 = no usable postings (inconclusive).
+
+## Run persistent discovery
+
+After the discovery-only smoke test succeeds, run the persistent boundary from
+the repository root:
+
+```powershell
+python -m scripts.run_job_discovery `
+    --query "software engineer entry level Seattle" `
+    --limit 3
+```
+
+This command uses `database/jobs.db` as the authoritative store and regenerates
+`data/exports/Job_Application_Tracker.xlsx`. If the local dashboard is open, it
+will display the refreshed workbook on its next five-second poll.
+
+The command performs discovery, deterministic pipeline processing, persistence,
+and Excel export only. It does not open a browser, fill a form, start the
+application workflow, submit an application, or confirm submission.
+
+Use `--database` and `--export` to select different persistent output paths.
+The result limit is always bounded from 1 through 20. Exit code 0 means the run
+completed, 1 means a discovery source failed, and 2 means local configuration or
+output setup failed.
 
 ## Parsing contract and limits
 

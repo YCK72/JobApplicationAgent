@@ -7,10 +7,9 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Verified checkpoint:** `e688997` — `Add controlled application execution session`  
-**Latest full regression at this checkpoint:** `1127 passed`  
-**Current development milestone:** **58C — production browser/session lifecycle and cleanup safety**  
-**Next planned substep:** **58C.2C — integrate `ApplicationExecutionSession` into production composition**
+**Latest verified full regression:** `1270 passed`
+**Most recently completed milestone:** **59A — persistent discovery-to-tracker runtime**
+**Current development milestone:** **59B — controlled single-job launch by exact persisted job ID**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -335,10 +334,10 @@ Tests should use fixtures, temporary files, or non-sensitive synthetic data wher
 pytest -q
 ```
 
-At Git checkpoint `e688997`, the verified result was:
+The latest verified result is:
 
 ```text
-1127 passed
+1270 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -355,6 +354,21 @@ The dashboard reads `data/exports/Job_Application_Tracker.xlsx` and refreshes
 the browser view every five seconds. It does not edit the workbook or change
 application state. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and
 custom-path instructions.
+
+### 9. Discover jobs into the live tracker
+
+After configuring `COMPOSIO_API_KEY`, run bounded discovery into the persistent
+database and regenerate the workbook used by the dashboard:
+
+```powershell
+python -m scripts.run_job_discovery `
+    --query "software engineer entry level Seattle" `
+    --limit 3
+```
+
+This command does not start the application workflow or open an execution
+browser. See [docs/composio_discovery.md](docs/composio_discovery.md) for its
+configuration, output, and exit-code contract.
 
 ## Useful Focused Tests
 
@@ -397,9 +411,10 @@ Verified checkpoint:
 e688997 Add controlled application execution session
 ```
 
-### Next task — Milestone 58C.2C
+### Completed — Milestone 58C.2C
 
-Production composition still needs to be migrated away from requiring a pre-bound `BrowserFieldWriter`.
+Production composition now uses a lazy `ApplicationExecutionSession` factory
+instead of requiring a pre-bound `BrowserFieldWriter`.
 
 The old production shape is conceptually:
 
@@ -409,7 +424,7 @@ build_application_workflow(..., writer=...)
 → ApplicationWorkflow(browser_executor=...)
 ```
 
-The target production shape is:
+The production shape is:
 
 ```text
 build_application_workflow(
@@ -426,11 +441,12 @@ build_application_workflow(
    )
 ```
 
-The production execution browser must be created **only after** form authorization and target authorization succeed.
+The production execution browser is created **only after** form authorization
+and target authorization succeed.
 
-### Required 58C.2C tests
+### Verified 58C.2C safety contract
 
-Before changing production composition, add RED tests proving at least:
+The composition tests prove that:
 
 1. Building the workflow does not launch Brave.
 2. Inspection sessions remain lazy.
@@ -687,7 +703,7 @@ If you are joining the project at checkpoint `e688997`:
    - `app/browser/playwright_form_writer.py`
 6. Read the corresponding tests.
 7. Create a feature branch.
-8. Continue with **58C.2C production composition integration**.
+8. Continue with the current milestone shown at the top of this README.
 9. Do not redesign completed layers unless a verified defect requires it.
 
 ## Project Direction
