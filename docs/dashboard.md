@@ -72,6 +72,16 @@ application status, authorize browser execution, submit an application, or
 record `APPLIED`. The workbook refreshes after a decision so the dashboard can
 reload its current job data, while SQLite retains the review history.
 
+Select **History** on a job row to open its chronological audit panel. The
+panel is read-only and can filter decisions by outcome and review kind. Its API
+is `GET /api/jobs/{job_id}/review-history`; reading history never invokes the
+application workflow or changes database state.
+
+Every tracker refresh also exports the complete append-only audit log to the
+`Review History` worksheet. The sheet includes decision ID, job ID, company,
+title, review kind, outcome, note, and recorded timestamp, with Excel filters
+enabled for offline review.
+
 The editable server must bind to `127.0.0.1`, `::1`, or `localhost`. Target
 assignment accepts JSON only and validates the pasted URL through the same
 HTTPS-only application-target resolver used by the application workflow.

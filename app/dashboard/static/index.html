@@ -105,6 +105,27 @@
             <span>Try clearing one or more filters.</span>
           </div>
         </div>
+        <section id="review-history-panel" class="history-panel" aria-labelledby="history-title" hidden>
+          <div class="history-heading">
+            <div>
+              <p class="eyebrow">AUDIT HISTORY</p>
+              <h3 id="history-title">Review history</h3>
+              <p id="history-job" class="muted"></p>
+            </div>
+            <button id="history-close" class="history-close" type="button">Close</button>
+          </div>
+          <div class="history-filters">
+            <label>
+              <span>Outcome</span>
+              <select id="history-outcome-filter"><option value="">All outcomes</option></select>
+            </label>
+            <label>
+              <span>Review kind</span>
+              <select id="history-kind-filter"><option value="">All review kinds</option></select>
+            </label>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </section>
       </div>
 
       <aside class="status-panel" aria-labelledby="status-title">

@@ -58,6 +58,7 @@ def test_required_sheets(
         "Manual Queue",
         "Interviews",
         "Rejected",
+        "Review History",
     }
 
     assert expected.issubset(
@@ -271,3 +272,56 @@ def test_dashboard_manual_queue_counts_review_jobs(
 
     assert metrics["Manual Queue"] == 2
     assert metrics["Needs Review"] == 2
+
+
+def test_review_history_exports_append_only_audit_rows(tmp_path: Path) -> None:
+    database = JobDatabase(tmp_path / "test_jobs.db")
+    job_id = database.add_job(Job(
+        company="Example Company",
+        title="Software Engineer I",
+        url="https://example.com/jobs/review-history",
+        source="Test",
+        status=ApplicationStatus.NEEDS_REVIEW,
+        application_method=ApplicationMethod.REVIEW,
+    ))
+    database.add_review_resolution(
+        job_id=job_id,
+        review_kind="TARGET_REQUIRED",
+        outcome="DEFERRED",
+        note="Waiting for a verified application link.",
+        created_at="2026-09-29T12:00:00",
+    )
+    database.add_review_resolution(
+        job_id=job_id,
+        review_kind="TARGET_REQUIRED",
+        outcome="RESOLVED",
+        note="Application was completed manually.",
+        created_at="2026-09-29T13:00:00",
+    )
+    export_path = tmp_path / "Job_Application_Tracker.xlsx"
+
+    ExcelTracker(database, export_path).generate()
+
+    workbook = load_workbook(export_path)
+    sheet = workbook["Review History"]
+    assert [cell.value for cell in sheet[1]] == [
+        "Decision ID",
+        "Job ID",
+        "Company",
+        "Title",
+        "Review Kind",
+        "Outcome",
+        "Note",
+        "Recorded At",
+    ]
+    assert [sheet.cell(2, column).value for column in range(1, 9)] == [
+        1,
+        job_id,
+        "Example Company",
+        "Software Engineer I",
+        "TARGET_REQUIRED",
+        "DEFERRED",
+        "Waiting for a verified application link.",
+        "2026-09-29T12:00:00",
+    ]
+    assert sheet["F3"].value == "RESOLVED"

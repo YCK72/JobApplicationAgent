@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1406 passed`
+**Latest verified full regression:** `1408 passed`
 
-**Most recently completed milestone:** **61B — durable review-resolution tracking**
+**Most recently completed milestone:** **61C — review-history inspection and export**
 
-**Current development milestone:** **61C — review-history inspection and export**
+**Current development milestone:** **62A — controlled dashboard application previews**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -360,7 +360,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1406 passed
+1408 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -382,7 +382,9 @@ updates the same database row, reruns the deterministic pipeline, and refreshes
 Excel. Each queued item can also receive a durable `RESOLVED`, `DEFERRED`, or
 `DISMISSED` decision with a required note. These decisions update the review
 queue only; they never change application lifecycle status or authorize
-submission. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
+submission. The dashboard exposes read-only per-job history with outcome and
+review-kind filters, and Excel includes a separate `Review History` worksheet.
+See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
 instructions.
 
 ### 9. Discover jobs into the live tracker

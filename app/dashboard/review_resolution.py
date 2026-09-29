@@ -158,6 +158,21 @@ class ApplicationReviewResolutionService:
             created_at=str(row["created_at"]),
         )
 
+    def history(self, job_id: int) -> list[ReviewResolutionRecord]:
+        if isinstance(job_id, bool) or not isinstance(job_id, int) or job_id <= 0:
+            raise ValueError("job_id must be a positive integer")
+        return [
+            ReviewResolutionRecord(
+                resolution_id=int(row["id"]),
+                job_id=int(row["job_id"]),
+                review_kind=str(row["review_kind"]),
+                outcome=ReviewResolutionOutcome(str(row["outcome"])),
+                note=str(row["note"]),
+                created_at=str(row["created_at"]),
+            )
+            for row in self.database.get_review_resolutions(job_id)
+        ]
+
     def apply_latest(
         self,
         job_id: int,

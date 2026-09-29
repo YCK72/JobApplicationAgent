@@ -101,6 +101,20 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
     def _handle(self, *, include_body: bool) -> None:
         path = urlsplit(self.path).path
 
+        history_match = re.fullmatch(
+            r"/api/jobs/([1-9][0-9]*)/review-history",
+            path,
+        )
+        if (
+            history_match
+            and self.server.review_resolution_service is not None
+        ):
+            self._serve_review_history(
+                int(history_match.group(1)),
+                include_body=include_body,
+            )
+            return
+
         if path == "/api/jobs":
             self._serve_jobs(include_body=include_body)
             return
@@ -273,6 +287,40 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 ),
             },
             include_body=True,
+        )
+
+    def _serve_review_history(
+        self,
+        job_id: int,
+        *,
+        include_body: bool,
+    ) -> None:
+        try:
+            history = self.server.review_resolution_service.history(job_id)
+        except Exception:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "Review history could not be loaded."},
+                include_body=include_body,
+            )
+            return
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "job_id": job_id,
+                "history": [
+                    {
+                        "resolution_id": record.resolution_id,
+                        "review_kind": record.review_kind,
+                        "outcome": record.outcome.value,
+                        "note": record.note,
+                        "recorded_at": record.created_at,
+                    }
+                    for record in history
+                ],
+            },
+            include_body=include_body,
         )
 
     def _record_review_resolution(self, job_id: int) -> None:

@@ -14,6 +14,7 @@ from app.dashboard.review_queue import build_review_queue_item
 from app.dashboard.review_resolution import (
     ApplicationReviewResolutionService,
     ReviewResolutionOutcome,
+    ReviewResolutionRecord,
     ReviewResolutionResult,
     ReviewResolutionStatus,
 )
@@ -316,6 +317,9 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             assert "review_reason" in script
             assert "review-filter" in script
             assert "review-resolution" in script
+            assert "review-history" in script
+            assert "history-outcome-filter" in script
+            assert "history-kind-filter" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()
@@ -602,6 +606,60 @@ def test_dashboard_applies_latest_resolution_without_changing_job_status(
         assert database.get_job_by_id(job_id).status == (
             ApplicationStatus.NEEDS_REVIEW
         )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_review_history_api_returns_chronological_read_only_records(
+    tmp_path: Path,
+) -> None:
+    service = MagicMock()
+    service.history.return_value = [
+        ReviewResolutionRecord(
+            resolution_id=1,
+            job_id=7,
+            review_kind="TARGET_REQUIRED",
+            outcome=ReviewResolutionOutcome.DEFERRED,
+            note="Waiting for an application link.",
+            created_at="2026-09-29T12:00:00",
+        ),
+        ReviewResolutionRecord(
+            resolution_id=2,
+            job_id=7,
+            review_kind="TARGET_REQUIRED",
+            outcome=ReviewResolutionOutcome.RESOLVED,
+            note="Applied manually.",
+            created_at="2026-09-29T13:00:00",
+        ),
+    ]
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        review_resolution_service=service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        with urlopen(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/review-history",
+            timeout=5,
+        ) as response:
+            payload = json.load(response)
+
+        assert response.status == 200
+        assert payload["job_id"] == 7
+        assert [item["outcome"] for item in payload["history"]] == [
+            "DEFERRED",
+            "RESOLVED",
+        ]
+        assert payload["history"][1]["note"] == "Applied manually."
+        service.history.assert_called_once_with(7)
+        service.record.assert_not_called()
     finally:
         server.shutdown()
         server.server_close()

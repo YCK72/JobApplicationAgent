@@ -406,6 +406,21 @@ class JobDatabase:
             ).fetchone()
         return dict(row) if row is not None else None
 
+    def get_all_review_resolutions(self) -> list[dict[str, object]]:
+        """Return every review decision with stable job display metadata."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT r.id, r.job_id, j.company, j.title,
+                       r.review_kind, r.outcome, r.note, r.created_at
+                FROM application_review_resolutions AS r
+                JOIN jobs AS j ON j.id = r.job_id
+                ORDER BY r.id ASC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     # ---------------------------------------------------------
     # Updates
     # ---------------------------------------------------------

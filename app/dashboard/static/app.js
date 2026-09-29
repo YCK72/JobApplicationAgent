@@ -4,6 +4,7 @@ const state = {
   jobs: [], source: null, loading: false,
   editingJobId: null, targetDraft: "",
   resolvingJobId: null, resolutionOutcome: "DEFERRED", resolutionNote: "",
+  history: [], historyJob: null,
 };
 const elements = {
   metrics: document.querySelector("#metrics"),
@@ -24,6 +25,12 @@ const elements = {
   syncLabel: document.querySelector("#sync-label"),
   syncDetail: document.querySelector("#sync-detail"),
   workbookName: document.querySelector("#workbook-name"),
+  historyPanel: document.querySelector("#review-history-panel"),
+  historyJob: document.querySelector("#history-job"),
+  historyList: document.querySelector("#history-list"),
+  historyOutcome: document.querySelector("#history-outcome-filter"),
+  historyKind: document.querySelector("#history-kind-filter"),
+  historyClose: document.querySelector("#history-close"),
 };
 
 const metricDefinitions = [
@@ -253,6 +260,12 @@ function renderTable() {
         linkCell.append(review);
       }
     }
+    if (job.job_id) {
+      const history = createNode("button", "history-open", "History");
+      history.type = "button";
+      history.addEventListener("click", () => { openReviewHistory(job); });
+      linkCell.append(history);
+    }
 
     row.append(
       opportunity,
@@ -316,6 +329,50 @@ async function submitReviewResolution(jobId) {
     elements.reviewNotice.textContent = error instanceof Error ? error.message : "Review decision could not be saved.";
     renderTable();
   }
+}
+
+async function openReviewHistory(job) {
+  try {
+    const response = await fetch(`/api/jobs/${job.job_id}/review-history`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Review history could not be loaded.");
+    state.history = Array.isArray(payload.history) ? payload.history : [];
+    state.historyJob = job;
+    populateSelect(elements.historyOutcome, [...new Set(state.history.map((item) => item.outcome).filter(Boolean))].sort());
+    populateSelect(elements.historyKind, [...new Set(state.history.map((item) => item.review_kind).filter(Boolean))].sort());
+    elements.historyJob.textContent = `${job.company || "Unknown company"} — ${job.title || "Untitled role"}`;
+    elements.historyPanel.hidden = false;
+    renderReviewHistory();
+  } catch (error) {
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice error";
+    elements.reviewNotice.textContent = error instanceof Error ? error.message : "Review history could not be loaded.";
+  }
+}
+
+function renderReviewHistory() {
+  const history = state.history.filter((item) => (
+    (!elements.historyOutcome.value || item.outcome === elements.historyOutcome.value)
+    && (!elements.historyKind.value || item.review_kind === elements.historyKind.value)
+  ));
+  const rows = history.map((item) => {
+    const row = createNode("article", "history-item");
+    const heading = createNode("div", "history-item-heading");
+    heading.append(
+      createNode("span", "review-kind", label(item.outcome)),
+      createNode("span", "history-date", dateLabel(item.recorded_at)),
+    );
+    row.append(
+      heading,
+      createNode("strong", "history-kind", label(item.review_kind)),
+      createNode("p", "history-note", item.note || "No note recorded."),
+    );
+    return row;
+  });
+  replaceChildren(
+    elements.historyList,
+    rows.length ? rows : [createNode("p", "muted", "No matching review decisions.")],
+  );
 }
 
 function renderStatusBreakdown() {
@@ -382,6 +439,13 @@ for (const control of [elements.search, elements.status, elements.category, elem
   control.addEventListener(control === elements.search ? "input" : "change", renderTable);
 }
 elements.refresh.addEventListener("click", refresh);
+elements.historyOutcome.addEventListener("change", renderReviewHistory);
+elements.historyKind.addEventListener("change", renderReviewHistory);
+elements.historyClose.addEventListener("click", () => {
+  elements.historyPanel.hidden = true;
+  state.history = [];
+  state.historyJob = null;
+});
 
 renderMetrics();
 refresh();

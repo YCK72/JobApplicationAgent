@@ -91,6 +91,12 @@ def test_history_is_append_only_and_latest_is_kind_scoped(tmp_path: Path) -> Non
     ]
     assert latest.outcome == ReviewResolutionOutcome.DISMISSED
 
+    service_history = service.history(job_id)
+    assert [record.outcome for record in service_history] == [
+        ReviewResolutionOutcome.DEFERRED,
+        ReviewResolutionOutcome.DISMISSED,
+    ]
+
 
 @pytest.mark.parametrize("note", [None, "", "  ", "ok"])
 def test_note_is_required_and_meaningful(

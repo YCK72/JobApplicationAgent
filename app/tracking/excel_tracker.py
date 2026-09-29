@@ -48,6 +48,17 @@ class ExcelTracker:
         "Notes",
     ]
 
+    REVIEW_HISTORY_HEADERS = [
+        "Decision ID",
+        "Job ID",
+        "Company",
+        "Title",
+        "Review Kind",
+        "Outcome",
+        "Note",
+        "Recorded At",
+    ]
+
     def __init__(
         self,
         database: JobDatabase,
@@ -94,6 +105,11 @@ class ExcelTracker:
                 for job in jobs
                 if job.status == ApplicationStatus.APPLIED
             ],
+        )
+
+        self._create_review_history_sheet(
+            workbook,
+            self.database.get_all_review_resolutions(),
         )
 
         self._create_job_sheet(
@@ -389,6 +405,55 @@ class ExcelTracker:
             ),
             job.notes,
         ]
+
+    def _create_review_history_sheet(
+        self,
+        workbook: Workbook,
+        history: list[dict[str, object]],
+    ) -> None:
+        sheet = workbook.create_sheet("Review History")
+        for column_number, header in enumerate(
+            self.REVIEW_HISTORY_HEADERS,
+            start=1,
+        ):
+            cell = sheet.cell(1, column_number, header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        keys = (
+            "id",
+            "job_id",
+            "company",
+            "title",
+            "review_kind",
+            "outcome",
+            "note",
+            "created_at",
+        )
+        for row_number, record in enumerate(history, start=2):
+            for column_number, key in enumerate(keys, start=1):
+                sheet.cell(row_number, column_number, record.get(key))
+
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = f"A1:H{max(sheet.max_row, 1)}"
+        widths = (14, 10, 24, 34, 24, 16, 55, 24)
+        for column_number, width in enumerate(widths, start=1):
+            sheet.column_dimensions[get_column_letter(column_number)].width = width
+
+        if history:
+            table = Table(
+                displayName="ReviewHistoryTable",
+                ref=f"A1:H{sheet.max_row}",
+            )
+            table.tableStyleInfo = TableStyleInfo(
+                name="TableStyleMedium2",
+                showFirstColumn=False,
+                showLastColumn=False,
+                showRowStripes=True,
+                showColumnStripes=False,
+            )
+            sheet.add_table(table)
 
     # ---------------------------------------------------------
     # Formatting
