@@ -32,6 +32,9 @@ def make_workbook(tmp_path: Path) -> Path:
             title="Software Engineer I",
             location="Seattle, WA",
             url="https://example.com/jobs/1",
+            application_url=(
+                "https://job-boards.greenhouse.io/example/jobs/1"
+            ),
             source="linkedin_composio",
             category=JobCategory.SDE,
             fit_score=84.5,
@@ -98,6 +101,9 @@ def test_reader_returns_dashboard_snapshot(tmp_path: Path) -> None:
     assert example_job["fit_score"] == 84.5
     assert example_job["job_url"] == (
         "https://example.com/jobs/1"
+    )
+    assert example_job["application_url"] == (
+        "https://job-boards.greenhouse.io/example/jobs/1"
     )
     json.dumps(snapshot)
 

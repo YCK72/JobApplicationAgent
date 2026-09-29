@@ -8,6 +8,10 @@ from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
 
 from app.discovery.base import JobSource, RawJobPosting
+from app.applications.target_resolver import (
+    ApplicationTargetResolver,
+    ApplicationTargetStatus,
+)
 from app.jobs.models import Job
 
 
@@ -218,6 +222,7 @@ class GreenhouseJobSource(JobSource):
                 "Greenhouse job payload is missing a valid absolute_url"
             )
 
+        target = ApplicationTargetResolver().resolve([absolute_url])
         location = None
         location_data = payload.get("location")
 
@@ -244,6 +249,11 @@ class GreenhouseJobSource(JobSource):
             title=title.strip(),
             location=location,
             url=absolute_url.strip(),
+            application_url=(
+                target.application_url
+                if target.status == ApplicationTargetStatus.RESOLVED
+                else None
+            ),
             description=description,
             external_job_id=str(job_id),
             date_posted=date_posted,
@@ -265,6 +275,7 @@ class GreenhouseJobSource(JobSource):
             title=raw_job.title,
             location=raw_job.location,
             url=raw_job.url,
+            application_url=raw_job.application_url,
             source=raw_job.source,
             description=raw_job.description,
             external_job_id=raw_job.external_job_id,

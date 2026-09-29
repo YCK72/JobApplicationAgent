@@ -121,12 +121,21 @@ function renderTable() {
     method.append(createNode("span", "pill", label(job.application_method)));
 
     const linkCell = document.createElement("td");
+    linkCell.className = "link-group";
     if (job.job_url) {
-      const link = createNode("a", "open-link", "↗");
+      const link = createNode("a", "open-link", "Source");
       link.href = job.job_url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.setAttribute("aria-label", `Open ${job.title || "job"} listing`);
+      linkCell.append(link);
+    }
+    if (job.application_url) {
+      const link = createNode("a", "open-link apply-link", "Apply");
+      link.href = job.application_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.setAttribute("aria-label", `Open ${job.title || "job"} application`);
       linkCell.append(link);
     }
 

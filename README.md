@@ -7,9 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1307 passed`
-**Most recently completed milestone:** **59C — explicit post-review submission confirmation command**
-**Current development milestone:** **60A — resolve discovered listings to supported ATS application targets**
+**Latest verified full regression:** `1323 passed`
+
+**Most recently completed milestone:** **60A — resolve discovered listings to supported ATS application targets**
+
+**Current development milestone:** **60B — reviewed target assignment and additional ATS coverage**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -29,6 +31,7 @@ These rules are architectural requirements, not optional conventions:
 10. `APPLIED` requires independent post-review submission confirmation. Ambiguous evidence becomes `SUBMISSION_UNCONFIRMED`.
 11. SQLite is the authoritative application state; Excel is the human-facing tracker/report.
 12. Credentials, private candidate data, resumes, application answers, databases, browser profiles, logs, and generated private files must stay out of source control.
+13. A discovery URL and an application URL are separate facts. Only an explicit, validated HTTPS target on an enabled ATS may enter browser execution.
 
 ### Sensitive application questions
 
@@ -65,6 +68,8 @@ Normalization
     ↓
 Job
     ↓
+Explicit ATS Target Resolution
+    ↓
 Company Routing
     ↓
 Deduplication
@@ -99,6 +104,20 @@ Independent Submission Confirmation
 ```
 
 The controlled application workflow **does not submit**.
+
+## Application Target Resolution
+
+Discovery keeps the original listing URL for traceability and stores a
+separate application URL for execution. The resolver does not scrape URLs from
+free text, guess targets, follow redirects, or accept lookalike hosts. It
+canonicalizes explicit HTTPS targets by removing query parameters and
+fragments.
+
+Greenhouse is the only enabled production ATS target in Milestone 60A. Lever,
+Ashby, Workday, missing targets, invalid targets, and multiple candidate
+targets fail closed. An unresolved LinkedIn listing is persisted as
+`NEEDS_REVIEW` before fit scoring or resume routing. The Excel tracker and web
+dashboard display both the source listing and the verified application target.
 
 ## Application Execution Safety Boundary
 

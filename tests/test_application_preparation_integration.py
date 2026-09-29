@@ -275,7 +275,7 @@ def preparation_service(
 def make_high_fit_job(
     *,
     company="Example Startup",
-    url="https://example.com/jobs/integration-1",
+    url="https://job-boards.greenhouse.io/example/jobs/integration-1",
 ):
     return Job(
         company=company,

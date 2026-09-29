@@ -126,8 +126,11 @@ tbody tr:hover { background: #fbfcfe; }
 .pill.status-applied, .pill.status-offer { color: #106e5e; background: #e7f7f3; }
 .pill.status-rejected { color: #9c3d43; background: #fdecee; }
 .pill.status-needs-review { color: #8a5c0b; background: #fff3d8; }
-.open-link { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 8px; color: var(--blue); text-decoration: none; font-weight: 800; }
+.link-group { display: flex; gap: 6px; }
+.open-link { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--blue); text-decoration: none; font-size: .72rem; font-weight: 800; }
 .open-link:hover { border-color: #9bb6ec; background: var(--blue-soft); }
+.apply-link { color: white; border-color: var(--blue); background: var(--blue); }
+.apply-link:hover { color: var(--blue); }
 .empty-state { padding: 54px 20px; text-align: center; }
 .empty-state strong, .empty-state span { display: block; }
 .empty-state span { margin-top: 6px; color: var(--muted); }

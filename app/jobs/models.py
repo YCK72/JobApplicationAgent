@@ -79,6 +79,7 @@ class Job(BaseModel):
 
     location: Optional[str] = None
     url: HttpUrl
+    application_url: Optional[HttpUrl] = None
 
     source: str = Field(min_length=1)
 

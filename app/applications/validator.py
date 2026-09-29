@@ -9,6 +9,10 @@ from app.jobs.models import (
     CompanyRule,
     Job,
 )
+from app.applications.target_resolver import (
+    ApplicationTargetStatus,
+    resolve_job_application_target,
+)
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,12 @@ class ApplicationValidator:
                 ),
             )
 
+        target = resolve_job_application_target(job)
+        if target.status != ApplicationTargetStatus.RESOLVED:
+            return ValidationResult(
+                ready=False,
+                reason=f"Application target is not ready: {target.reason}",
+            )
         resume_path = Path(job.resume_used)
 
         if not resume_path.is_file():

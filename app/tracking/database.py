@@ -62,6 +62,7 @@ class JobDatabase:
                     title TEXT NOT NULL,
                     location TEXT,
                     url TEXT NOT NULL UNIQUE,
+                    application_url TEXT,
                     source TEXT NOT NULL,
 
                     description TEXT,
@@ -91,6 +92,15 @@ class JobDatabase:
                 )
                 """
             )
+
+            columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(jobs)")
+            }
+            if "application_url" not in columns:
+                connection.execute(
+                    "ALTER TABLE jobs ADD COLUMN application_url TEXT"
+                )
 
             connection.execute(
                 """
@@ -145,6 +155,7 @@ class JobDatabase:
                     title,
                     location,
                     url,
+                    application_url,
                     source,
                     description,
                     external_job_id,
@@ -168,7 +179,7 @@ class JobDatabase:
                     ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?
+                    ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -176,6 +187,11 @@ class JobDatabase:
                     job.title,
                     job.location,
                     job.url.encoded_string(),
+                    (
+                        job.application_url.encoded_string()
+                        if job.application_url
+                        else None
+                    ),
                     job.source,
                     job.description,
                     job.external_job_id,
@@ -461,6 +477,7 @@ class JobDatabase:
             title=row["title"],
             location=row["location"],
             url=row["url"],
+            application_url=row["application_url"],
             source=row["source"],
             description=row["description"],
             external_job_id=row["external_job_id"],

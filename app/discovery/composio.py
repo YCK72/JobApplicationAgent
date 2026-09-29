@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from app.discovery.base import JobSource, RawJobPosting
+from app.applications.target_resolver import ApplicationTargetResolver
 from app.jobs.models import Job
 
 
@@ -210,17 +211,44 @@ class LinkedInComposioJobSource(JobSource):
         headings = re.findall(r"^#\s+(.+?)\s*$", text, flags=re.MULTILINE)
         if fields["title"] not in headings or fields["company"] not in text:
             return None
+        target = ApplicationTargetResolver().resolve(
+            self._explicit_application_targets(page)
+        )
         return RawJobPosting(source=self.source_name, url=url,
+                             application_url=target.application_url,
                              company=fields["company"], title=fields["title"],
                              location=fields.get("location"), description=text.strip(),
                              external_job_id=url.rsplit("/", 1)[-1],
                              metadata={"discovery_provider": "composio_search",
                                        "content_kind": "extracted_page_text",
                                        "tool_version": ComposioSearchClient.TOOL_VERSION,
-                                       "freshness_verified": False})
+                                       "freshness_verified": False,
+                                       "application_target_status": target.status.value,
+                                       "application_target_reason": target.reason})
+
+    @staticmethod
+    def _explicit_application_targets(page: dict) -> list[object]:
+        candidates: list[object] = [
+            page.get("application_url"),
+            page.get("apply_url"),
+        ]
+        links = page.get("links")
+        if isinstance(links, list):
+            for link in links:
+                if not isinstance(link, dict):
+                    continue
+                label = link.get("label") or link.get("title") or link.get("text")
+                if isinstance(label, str) and label.strip().casefold() in {
+                    "apply", "apply now", "application",
+                }:
+                    candidates.append(link.get("href") or link.get("url"))
+        return candidates
 
     def normalize(self, raw_job: RawJobPosting) -> Job:
         return Job(company=raw_job.company, title=raw_job.title,
-                   location=raw_job.location, url=raw_job.url, source=raw_job.source,
+                   location=raw_job.location, url=raw_job.url,
+                   application_url=raw_job.application_url, source=raw_job.source,
                    description=raw_job.description, external_job_id=raw_job.external_job_id,
-                   date_posted=raw_job.date_posted)
+                   date_posted=raw_job.date_posted,
+                   notes=(raw_job.metadata.get("application_target_reason")
+                          if raw_job.application_url is None else None))

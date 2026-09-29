@@ -28,6 +28,17 @@ from app.applications.single_job import (
 LauncherBuilder = Callable[..., SingleJobApplicationLauncher]
 
 
+def _url_text(value: object) -> str | None:
+    if isinstance(value, str):
+        return value
+    encoded_string = getattr(value, "encoded_string", None)
+    if callable(encoded_string) and type(value).__module__.startswith(
+        ("pydantic", "pydantic_core")
+    ):
+        return encoded_string()
+    return None
+
+
 def positive_job_id(value: str) -> int:
     try:
         job_id = int(value)
@@ -106,6 +117,21 @@ def main(
                                 "location": candidate.job.location,
                                 "fit_score": candidate.job.fit_score,
                                 "status": candidate.job.status.value,
+                                "source_url": _url_text(
+                                    getattr(candidate.job, "url", None)
+                                ),
+                                "application_url": (
+                                    _url_text(getattr(
+                                        candidate.job,
+                                        "application_url",
+                                        None,
+                                    ))
+                                    or _url_text(getattr(
+                                        candidate.job,
+                                        "url",
+                                        None,
+                                    ))
+                                ),
                             }
                             for candidate in candidates
                         ],
@@ -136,7 +162,10 @@ def main(
                 "company": job.company,
                 "title": job.title,
                 "location": job.location,
-                "url": str(job.url),
+                "source_url": _url_text(getattr(job, "url", None)),
+                "application_url": _url_text(
+                    getattr(job, "application_url", None)
+                ),
                 "fit_score": job.fit_score,
                 "resume": (
                     Path(job.resume_used).name

@@ -18,6 +18,10 @@ from app.jobs.models import (
 from app.jobs.pipeline import PipelineOutcome, PipelineResult
 from app.tracking.database import JobDatabase
 from app.tracking.excel_tracker import ExcelTracker
+from app.applications.target_resolver import (
+    ApplicationTargetStatus,
+    resolve_job_application_target,
+)
 
 
 class SingleJobLaunchStatus(str, Enum):
@@ -201,6 +205,9 @@ class SingleJobApplicationLauncher:
             )
         if job.application_method != ApplicationMethod.AUTO:
             return "Job application method is not AUTO."
+        target = resolve_job_application_target(job)
+        if target.status != ApplicationTargetStatus.RESOLVED:
+            return f"Job has no verified supported application target: {target.reason}"
         return None
 
     def _record_form_started(

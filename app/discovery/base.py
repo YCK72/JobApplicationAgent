@@ -21,6 +21,7 @@ class RawJobPosting:
     company: str
     title: str
     url: str
+    application_url: str | None = None
 
     location: str | None = None
     description: str | None = None

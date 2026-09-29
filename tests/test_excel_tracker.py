@@ -76,6 +76,9 @@ def test_job_appears_in_all_jobs(
         company="Example Company",
         title="Software Engineer",
         url="https://example.com/jobs/1",
+        application_url=(
+            "https://job-boards.greenhouse.io/example/jobs/1"
+        ),
         source="Test",
     )
 
@@ -96,6 +99,10 @@ def test_job_appears_in_all_jobs(
 
     assert sheet["A2"].value == "Example Company"
     assert sheet["B2"].value == "Software Engineer"
+    assert sheet["L2"].value == "https://example.com/jobs/1"
+    assert sheet["M2"].value == (
+        "https://job-boards.greenhouse.io/example/jobs/1"
+    )
 
 
 def test_manual_job_appears_in_manual_queue(

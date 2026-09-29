@@ -134,6 +134,8 @@ def make_browser_result() -> BrowserExecutionResult:
 
 def test_successful_workflow_coordinates_existing_safety_layers_in_order():
     job = make_job()
+    job.url = "https://www.linkedin.com/jobs/view/12345"
+    job.application_url = TARGET_URL
     pipeline_result = make_pipeline_result(job)
 
     preparation_service = MagicMock()
@@ -971,7 +973,7 @@ def test_unexpected_target_authorization_exception_fails_closed():
     browser_executor = MagicMock()
 
     job = MagicMock()
-    job.url = "https://example.com/application"
+    job.url = "https://job-boards.greenhouse.io/example/jobs/123"
     job.resume_used = None
 
     preparation = MagicMock()
@@ -1027,7 +1029,7 @@ def test_unexpected_browser_execution_exception_fails_closed():
     browser_executor = MagicMock()
 
     job = MagicMock()
-    job.url = "https://example.com/application"
+    job.url = "https://job-boards.greenhouse.io/example/jobs/123"
     job.resume_used = None
 
     preparation = MagicMock()

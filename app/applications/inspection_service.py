@@ -5,7 +5,6 @@ from enum import Enum
 from typing import Optional
 
 from app.applications.adapters.detector import (
-    ATSDetector,
     ATSProvider,
 )
 from app.applications.adapters.registry import (
@@ -25,6 +24,10 @@ from app.applications.form_plan import (
 )
 from app.applications.form_validator import (
     ApplicationFormValidator,
+)
+from app.applications.target_resolver import (
+    ApplicationTargetStatus,
+    resolve_job_application_target,
 )
 from app.jobs.models import (
     ApplicationStatus,
@@ -118,13 +121,13 @@ class ApplicationInspectionService:
                 ),
             )
 
-        provider = ATSDetector.detect(
-            str(job.url)
-        )
+        target = resolve_job_application_target(job)
+        provider = target.provider
 
-        if provider == ATSProvider.UNKNOWN:
+        if target.status != ApplicationTargetStatus.RESOLVED:
             reason = (
-                "Application ATS could not be identified safely."
+                "Application ATS could not be identified safely. "
+                f"{target.reason}"
             )
 
             self._move_to_review(
@@ -143,7 +146,7 @@ class ApplicationInspectionService:
         try:
             adapter = self.registry.create(
                 provider=provider,
-                job_url=str(job.url),
+                job_url=target.application_url,
             )
         except AdapterNotAvailableError as exc:
             reason = str(exc)
@@ -166,7 +169,7 @@ class ApplicationInspectionService:
         validation = self.form_validator.validate(
             form=form,
             expected_provider=provider,
-            expected_job_url=str(job.url),
+            expected_job_url=target.application_url,
         )
 
         if not validation.valid:

@@ -852,7 +852,12 @@ def test_composed_workflow_opens_execution_only_after_safety_gates(
         result = workflow.run(MagicMock(), allow_external=True)
 
     expected = ["prepare", "inspect", "browser", "form", "target", "browser"]
-    if stop is None:
+    if scheme == "http" and stop in {"target", None}:
+        expected = expected[:4]
+        assert result.status == ApplicationWorkflowStatus.BLOCKED
+        execution_session.__enter__.assert_not_called()
+        execution_session.navigate.assert_not_called()
+    elif stop is None:
         assert result.status == ApplicationWorkflowStatus.READY_FOR_REVIEW
         execution_session.__enter__.assert_called_once_with()
         execution_session.navigate.assert_called_once_with(target)

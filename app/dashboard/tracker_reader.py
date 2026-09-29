@@ -44,6 +44,7 @@ class TrackerWorkbookReader:
         "Status": "status",
         "Source": "source",
         "Job URL": "job_url",
+        "Application URL": "application_url",
         "Date Posted": "date_posted",
         "Date Found": "date_found",
         "Date Applied": "date_applied",
@@ -221,6 +222,9 @@ class TrackerWorkbookReader:
             for header, key in self.HEADER_KEYS.items()
         }
         job["job_url"] = self._safe_web_url(job["job_url"])
+        job["application_url"] = self._safe_web_url(
+            job["application_url"]
+        )
         return job
 
     @staticmethod

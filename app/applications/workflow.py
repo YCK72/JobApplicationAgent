@@ -25,6 +25,10 @@ from app.applications.router import (
     ApplicationPreparationService,
     PreparationOutcome,
 )
+from app.applications.target_resolver import (
+    ApplicationTargetStatus,
+    resolve_job_application_target,
+)
 from app.jobs.pipeline import PipelineResult
 
 ExecutionSessionFactory = Callable[
@@ -220,8 +224,12 @@ class ApplicationWorkflow:
                 execution_plan.reason
             )
 
+        target = resolve_job_application_target(job)
+        if target.status != ApplicationTargetStatus.RESOLVED:
+            return self._blocked(target.reason)
+
         target_authorization = self._execution_guard.authorize(
-            str(job.url),
+            target.application_url,
             allow_external=allow_external,
         )
 
@@ -236,7 +244,7 @@ class ApplicationWorkflow:
 
         if self._execution_session_factory is not None:
             with self._execution_session_factory(
-                    str(job.url)
+                    target.application_url
             ) as browser_executor:
                 browser_result = browser_executor.execute(
                     execution_plan,

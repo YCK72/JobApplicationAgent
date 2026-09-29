@@ -55,7 +55,7 @@ def make_job(
         company="Example Company",
         title="Software Engineer",
         location="Seattle, WA",
-        url="https://example.com/jobs/123",
+        url="https://job-boards.greenhouse.io/example/jobs/123",
         source="test",
         company_rule=CompanyRule.AUTO,
         application_method=ApplicationMethod.AUTO,

@@ -267,6 +267,27 @@ class JobPipeline:
                 job_id=self._persist(job),
             )
 
+        # LinkedIn is a discovery page, not an application endpoint.  Keep
+        # unresolved listings visible, but stop before scoring and resume
+        # routing until an explicit supported ATS target has been verified.
+        if job.source == "linkedin_composio" and job.application_url is None:
+            job.resume_used = None
+            job.fit_score = None
+            job.fit_explanation = None
+            job.status = ApplicationStatus.NEEDS_REVIEW
+            job.application_method = ApplicationMethod.REVIEW
+            reason = (
+                "No verified supported ATS application target was found for "
+                "this LinkedIn listing."
+            )
+            self._append_note(job, f"Application target: {reason}")
+            return PipelineResult(
+                job=job,
+                outcome=PipelineOutcome.MANUAL_REVIEW,
+                reason=reason,
+                job_id=self._persist(job),
+            )
+
         # -----------------------------------------------------
         # 6. Fit scoring
         # -----------------------------------------------------

@@ -41,6 +41,7 @@ class ExcelTracker:
         "Resume Used",
         "Source",
         "Job URL",
+        "Application URL",
         "Date Posted",
         "Date Found",
         "Date Applied",
@@ -314,7 +315,7 @@ class ExcelTracker:
 
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = (
-            f"A1:P{max(sheet.max_row, 1)}"
+            f"A1:Q{max(sheet.max_row, 1)}"
         )
 
         self._set_column_widths(sheet)
@@ -330,7 +331,7 @@ class ExcelTracker:
 
             table = Table(
                 displayName=table_name,
-                ref=f"A1:P{sheet.max_row}",
+                ref=f"A1:Q{sheet.max_row}",
             )
 
             style = TableStyleInfo(
@@ -364,6 +365,11 @@ class ExcelTracker:
             job.resume_used,
             job.source,
             job.url.encoded_string(),
+            (
+                job.application_url.encoded_string()
+                if job.application_url
+                else None
+            ),
             (
                 job.date_posted.isoformat()
                 if job.date_posted
@@ -403,10 +409,11 @@ class ExcelTracker:
             10: 32,
             11: 18,
             12: 55,
-            13: 16,
-            14: 22,
+            13: 55,
+            14: 16,
             15: 22,
-            16: 45,
+            16: 22,
+            17: 45,
         }
 
         for column_number, width in widths.items():
