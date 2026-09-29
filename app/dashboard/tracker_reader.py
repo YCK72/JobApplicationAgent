@@ -13,6 +13,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
 from app.tracking.excel_tracker import ExcelTracker
+from app.dashboard.review_queue import build_review_queue_item
 
 
 DEFAULT_WORKBOOK_PATH = Path(
@@ -225,6 +226,7 @@ class TrackerWorkbookReader:
         job["application_url"] = self._safe_web_url(
             job["application_url"]
         )
+        job.update(build_review_queue_item(job))
         return job
 
     @staticmethod
@@ -285,6 +287,10 @@ class TrackerWorkbookReader:
             "total_jobs": len(jobs),
             "applied": count_status("APPLIED"),
             "manual_queue": manual_queue,
+            "review_queue": sum(
+                job.get("review_required") is True
+                for job in jobs
+            ),
             "needs_review": count_status("NEEDS_REVIEW"),
             "in_progress": count_status("OA", "INTERVIEW"),
             "offers": count_status("OFFER"),

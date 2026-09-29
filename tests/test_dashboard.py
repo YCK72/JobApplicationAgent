@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from app.dashboard.server import create_dashboard_server
+from app.dashboard.review_queue import build_review_queue_item
 from app.applications.target_review import (
     ApplicationTargetReviewService,
     TargetReviewResult,
@@ -90,6 +91,7 @@ def test_reader_returns_dashboard_snapshot(tmp_path: Path) -> None:
         "total_jobs": 3,
         "applied": 1,
         "manual_queue": 2,
+        "review_queue": 1,
         "needs_review": 1,
         "in_progress": 0,
         "offers": 0,
@@ -112,7 +114,93 @@ def test_reader_returns_dashboard_snapshot(tmp_path: Path) -> None:
     assert example_job["application_url"] == (
         "https://job-boards.greenhouse.io/example/jobs/1"
     )
+    assert example_job["review_required"] is False
+    assert example_job["review_kind"] is None
+    assert example_job["review_reason"] is None
     json.dumps(snapshot)
+
+
+@pytest.mark.parametrize(
+    ("job", "kind", "reason_fragment"),
+    [
+        (
+            {
+                "status": "NEEDS_REVIEW",
+                "application_url": None,
+                "application_method": "REVIEW",
+            },
+            "TARGET_REQUIRED",
+            "verified application target",
+        ),
+        (
+            {
+                "status": "NEEDS_REVIEW",
+                "application_url": "https://example.com/jobs/1",
+                "application_method": "REVIEW",
+            },
+            "INVALID_TARGET",
+            "supported ATS",
+        ),
+        (
+            {
+                "status": "NEEDS_REVIEW",
+                "application_url": (
+                    "https://example.wd1.myworkdayjobs.com/en-US/External/"
+                    "job/Role_R123/apply/applyManually"
+                ),
+                "application_method": "REVIEW",
+            },
+            "WORKDAY_MULTI_STEP",
+            "later application steps",
+        ),
+        (
+            {"status": "FORM_STARTED"},
+            "FORM_REVIEW",
+            "submit manually",
+        ),
+        (
+            {"status": "SUBMISSION_UNCONFIRMED"},
+            "SUBMISSION_UNCONFIRMED",
+            "confirmation evidence",
+        ),
+        (
+            {"status": "ERROR"},
+            "APPLICATION_ERROR",
+            "recorded error",
+        ),
+        (
+            {
+                "status": "NEEDS_APPLICATION",
+                "company_rule": "MANUAL",
+                "application_method": "MANUAL",
+            },
+            "MANUAL_APPLICATION",
+            "handled manually",
+        ),
+    ],
+)
+def test_review_queue_classifies_actionable_states(
+    job: dict[str, object],
+    kind: str,
+    reason_fragment: str,
+) -> None:
+    item = build_review_queue_item(job)
+
+    assert item["review_required"] is True
+    assert item["review_kind"] == kind
+    assert reason_fragment in item["review_reason"]
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["APPLIED", "REJECTED", "OFFER", "WITHDRAWN", "FILTERED_OUT"],
+)
+def test_review_queue_excludes_completed_or_inactive_states(status: str) -> None:
+    assert build_review_queue_item({"status": status}) == {
+        "review_required": False,
+        "review_kind": None,
+        "review_reason": None,
+    }
 
 
 def test_reader_reuses_snapshot_until_file_changes(tmp_path: Path) -> None:
@@ -219,6 +307,8 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             assert "setInterval" in script
             assert "application-target" in script
             assert "Set target" in script
+            assert "review_reason" in script
+            assert "review-filter" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()
@@ -363,6 +453,11 @@ def test_editable_jobs_snapshot_exposes_only_eligible_record_id(
             payload = json.load(response)
         assert payload["jobs"][0]["job_id"] == job_id
         assert payload["jobs"][0]["target_review_eligible"] is True
+        assert payload["jobs"][0]["review_required"] is True
+        assert payload["jobs"][0]["review_kind"] == "TARGET_REQUIRED"
+        assert "verified application target" in (
+            payload["jobs"][0]["review_reason"]
+        )
     finally:
         server.shutdown()
         server.server_close()

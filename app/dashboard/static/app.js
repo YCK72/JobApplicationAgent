@@ -14,6 +14,7 @@ const elements = {
   status: document.querySelector("#status-filter"),
   category: document.querySelector("#category-filter"),
   method: document.querySelector("#method-filter"),
+  review: document.querySelector("#review-filter"),
   sort: document.querySelector("#sort"),
   warning: document.querySelector("#warning"),
   reviewNotice: document.querySelector("#review-notice"),
@@ -28,6 +29,7 @@ const metricDefinitions = [
   ["total_jobs", "Total jobs", true],
   ["applied", "Applied"],
   ["manual_queue", "Manual queue"],
+  ["review_queue", "Review queue"],
   ["needs_review", "Needs review"],
   ["in_progress", "In progress"],
   ["offers", "Offers"],
@@ -89,11 +91,15 @@ function populateSelect(select, values) {
 function filteredJobs() {
   const query = elements.search.value.trim().toLowerCase();
   const jobs = state.jobs.filter((job) => {
-    const searchText = [job.company, job.title, job.location, job.notes].filter(Boolean).join(" ").toLowerCase();
+    const searchText = [job.company, job.title, job.location, job.notes, job.review_reason].filter(Boolean).join(" ").toLowerCase();
+    const reviewMatch = !elements.review.value
+      || (elements.review.value === "required" && job.review_required === true)
+      || (elements.review.value === "clear" && job.review_required !== true);
     return (!query || searchText.includes(query))
       && (!elements.status.value || job.status === elements.status.value)
       && (!elements.category.value || job.category === elements.category.value)
-      && (!elements.method.value || job.application_method === elements.method.value);
+      && (!elements.method.value || job.application_method === elements.method.value)
+      && reviewMatch;
   });
 
   const sort = elements.sort.value;
@@ -123,6 +129,17 @@ function renderTable() {
 
     const method = document.createElement("td");
     method.append(createNode("span", "pill", label(job.application_method)));
+
+    const review = document.createElement("td");
+    review.className = "review-cell";
+    if (job.review_required) {
+      review.append(
+        createNode("span", "review-kind", label(job.review_kind)),
+        createNode("span", "review-reason", job.review_reason || "Review required."),
+      );
+    } else {
+      review.append(createNode("span", "review-clear", "No action"));
+    }
 
     const linkCell = document.createElement("td");
     linkCell.className = "link-group";
@@ -186,6 +203,7 @@ function renderTable() {
       fit,
       status,
       method,
+      review,
       createNode("td", "", dateLabel(job.date_found)),
       linkCell,
     );
@@ -277,7 +295,7 @@ async function refresh() {
   }
 }
 
-for (const control of [elements.search, elements.status, elements.category, elements.method, elements.sort]) {
+for (const control of [elements.search, elements.status, elements.category, elements.method, elements.review, elements.sort]) {
   control.addEventListener(control === elements.search ? "input" : "change", renderTable);
 }
 elements.refresh.addEventListener("click", refresh);

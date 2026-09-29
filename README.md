@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1381 passed`
+**Latest verified full regression:** `1393 passed`
 
-**Most recently completed milestone:** **60E — fully validated Workday adapter**
+**Most recently completed milestone:** **61A — dashboard application review queue**
 
-**Current development milestone:** **61A — define the next controlled application milestone**
+**Current development milestone:** **61B — durable review-resolution tracking**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -360,7 +360,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1381 passed
+1393 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -374,7 +374,9 @@ python -m app.dashboard.server --open-browser
 ```
 
 The dashboard reads `data/exports/Job_Application_Tracker.xlsx` and refreshes
-the browser view every five seconds. Unresolved LinkedIn records expose a
+the browser view every five seconds. Its review queue explains why each
+actionable application needs attention and can filter the table to those
+records. Unresolved LinkedIn records expose a
 guarded form for assigning a reviewed Greenhouse, Lever, Ashby, or Workday target. A valid assignment
 updates the same database row, reruns the deterministic pipeline, and refreshes
 Excel. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
