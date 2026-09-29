@@ -1,6 +1,13 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from app.applications.submission_confirmation import (
+    SubmissionConfirmationService,
+)
+from app.jobs.models import (
+    ApplicationStatus,
+    Job,
+)
 from app.applications.validator import (
     ApplicationValidator,
 )
@@ -17,6 +24,7 @@ from app.applications.composition import (
     build_application_adapter_registry,
     build_application_inspection_service,
     build_application_workflow,
+    build_submission_confirmation_service,
 )
 from app.applications.execution_guard import (
     ExternalExecutionGuard,
@@ -467,5 +475,155 @@ def test_composed_execution_components_never_authorize_submission(
 
     assert not hasattr(
         workflow._browser_executor,
+        "submit",
+    )
+
+def test_submission_confirmation_service_can_be_composed(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "confirmation_composition_test.db"
+    )
+
+    service = build_submission_confirmation_service(
+        database=database,
+    )
+
+    assert isinstance(
+        service,
+        SubmissionConfirmationService,
+    )
+
+    assert service.database is database
+
+
+def test_submission_confirmation_composition_is_independent_of_workflow(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "confirmation_independence_test.db"
+    )
+
+    service = build_submission_confirmation_service(
+        database=database,
+    )
+
+    assert isinstance(
+        service,
+        SubmissionConfirmationService,
+    )
+
+    assert not hasattr(
+        service,
+        "submit",
+    )
+
+    assert not hasattr(
+        service,
+        "workflow",
+    )
+
+    assert not hasattr(
+        service,
+        "browser_executor",
+    )
+
+    assert service.database is database
+
+
+def test_composed_confirmation_service_never_authorizes_submission(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "confirmation_submission_test.db"
+    )
+
+    service = build_submission_confirmation_service(
+        database=database,
+    )
+
+    assert not hasattr(
+        service,
+        "submit",
+    )
+
+    assert not hasattr(
+        service,
+        "may_submit",
+    )
+
+def test_workflow_and_confirmation_service_remain_separate_lifecycle_boundaries(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "workflow_confirmation_boundary_test.db"
+    )
+
+    workflow = build_application_workflow(
+        analyzer=MagicMock(
+            spec=ApplicationFormAnalyzer
+        ),
+        planner=MagicMock(
+            spec=ApplicationFormPlanner
+        ),
+        database=database,
+        writer=MagicMock(),
+        allowed_local_fixture=(
+            tmp_path / "application_fixture.html"
+        ),
+    )
+
+    confirmation_service = (
+        build_submission_confirmation_service(
+            database=database,
+        )
+    )
+
+    assert isinstance(
+        workflow,
+        ApplicationWorkflow,
+    )
+
+    assert isinstance(
+        confirmation_service,
+        SubmissionConfirmationService,
+    )
+
+    assert (
+        workflow._preparation_service.database
+        is database
+    )
+
+    assert (
+        workflow._inspection_service.database
+        is database
+    )
+
+    assert confirmation_service.database is database
+
+    # Workflow execution and post-review confirmation are deliberately
+    # separate composition boundaries.
+    assert not hasattr(
+        workflow,
+        "submission_confirmation_service",
+    )
+
+    assert not hasattr(
+        workflow,
+        "confirm_submission",
+    )
+
+    assert not hasattr(
+        workflow,
+        "submit",
+    )
+
+    assert not hasattr(
+        confirmation_service,
+        "workflow",
+    )
+
+    assert not hasattr(
+        confirmation_service,
         "submit",
     )

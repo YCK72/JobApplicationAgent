@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from app.applications.submission_confirmation import (
+    SubmissionConfirmationService,
+)
 from app.applications.adapters.detector import (
     ATSProvider,
 )
@@ -173,4 +176,30 @@ def build_application_workflow(
         form_executor=form_executor,
         execution_guard=execution_guard,
         browser_executor=browser_executor,
+    )
+def build_submission_confirmation_service(
+    *,
+    database: JobDatabase,
+) -> SubmissionConfirmationService:
+    """
+    Build the independent post-review submission-confirmation service.
+
+    This composition boundary is intentionally separate from
+    ApplicationWorkflow.
+
+    Building this service does not:
+
+    - launch or manipulate a browser,
+    - inspect or fill an application,
+    - click or authorize submission,
+    - infer submission from workflow completion,
+    - mark an application as applied.
+
+    APPLIED can only be recorded later when the caller explicitly
+    invokes the returned service with independently supplied
+    confirmation evidence.
+    """
+
+    return SubmissionConfirmationService(
+        database=database,
     )
