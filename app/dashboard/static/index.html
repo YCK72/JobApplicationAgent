@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Job Application Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">APPLICATION AUTOMATION</p>
+      <h1>Job Application Dashboard</h1>
+      <p class="subtitle">A live, read-only view of your Excel application tracker.</p>
+    </div>
+    <div class="sync-card" aria-live="polite">
+      <span class="sync-dot" id="sync-dot"></span>
+      <div>
+        <strong id="sync-label">Connecting…</strong>
+        <span id="sync-detail">Waiting for the workbook</span>
+      </div>
+      <button id="refresh-button" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="warning" class="warning" role="status" hidden></div>
+
+    <section aria-labelledby="overview-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">OVERVIEW</p>
+          <h2 id="overview-title">Application pipeline</h2>
+        </div>
+        <p id="workbook-name" class="muted"></p>
+      </div>
+      <div id="metrics" class="metrics" aria-live="polite"></div>
+    </section>
+
+    <section class="workspace" aria-labelledby="applications-title">
+      <div class="applications-panel">
+        <div class="section-heading table-heading">
+          <div>
+            <p class="eyebrow">TRACKER</p>
+            <h2 id="applications-title">Applications</h2>
+          </div>
+          <span id="result-count" class="result-count">0 jobs</span>
+        </div>
+
+        <div class="filters" aria-label="Application filters">
+          <label class="search-field">
+            <span>Search</span>
+            <input id="search" type="search" placeholder="Company, role, or location">
+          </label>
+          <label>
+            <span>Status</span>
+            <select id="status-filter"><option value="">All statuses</option></select>
+          </label>
+          <label>
+            <span>Category</span>
+            <select id="category-filter"><option value="">All categories</option></select>
+          </label>
+          <label>
+            <span>Method</span>
+            <select id="method-filter"><option value="">All methods</option></select>
+          </label>
+          <label>
+            <span>Sort</span>
+            <select id="sort">
+              <option value="found-desc">Newest found</option>
+              <option value="fit-desc">Highest fit</option>
+              <option value="company-asc">Company A–Z</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Opportunity</th>
+                <th>Location</th>
+                <th>Fit</th>
+                <th>Status</th>
+                <th>Method</th>
+                <th>Found</th>
+                <th><span class="sr-only">Job link</span></th>
+              </tr>
+            </thead>
+            <tbody id="jobs-body"></tbody>
+          </table>
+          <div id="empty-state" class="empty-state" hidden>
+            <strong>No matching jobs</strong>
+            <span>Try clearing one or more filters.</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="status-panel" aria-labelledby="status-title">
+        <p class="eyebrow">DISTRIBUTION</p>
+        <h2 id="status-title">By status</h2>
+        <div id="status-breakdown" class="status-breakdown"></div>
+        <p class="aside-note">The dashboard refreshes every five seconds while this page is open.</p>
+      </aside>
+    </section>
+  </main>
+
+  <footer>
+    <span>Read-only dashboard</span>
+    <span>Excel remains your visible tracker</span>
+  </footer>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

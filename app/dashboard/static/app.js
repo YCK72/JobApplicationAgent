@@ -1,0 +1,214 @@
+"use strict";
+
+const state = { jobs: [], source: null, loading: false };
+const elements = {
+  metrics: document.querySelector("#metrics"),
+  jobsBody: document.querySelector("#jobs-body"),
+  emptyState: document.querySelector("#empty-state"),
+  resultCount: document.querySelector("#result-count"),
+  statusBreakdown: document.querySelector("#status-breakdown"),
+  search: document.querySelector("#search"),
+  status: document.querySelector("#status-filter"),
+  category: document.querySelector("#category-filter"),
+  method: document.querySelector("#method-filter"),
+  sort: document.querySelector("#sort"),
+  warning: document.querySelector("#warning"),
+  refresh: document.querySelector("#refresh-button"),
+  syncDot: document.querySelector("#sync-dot"),
+  syncLabel: document.querySelector("#sync-label"),
+  syncDetail: document.querySelector("#sync-detail"),
+  workbookName: document.querySelector("#workbook-name"),
+};
+
+const metricDefinitions = [
+  ["total_jobs", "Total jobs", true],
+  ["applied", "Applied"],
+  ["manual_queue", "Manual queue"],
+  ["needs_review", "Needs review"],
+  ["in_progress", "In progress"],
+  ["offers", "Offers"],
+  ["rejected", "Rejected"],
+];
+
+function createNode(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text !== undefined && text !== null) element.textContent = String(text);
+  return element;
+}
+
+function replaceChildren(parent, children) {
+  parent.replaceChildren(...children);
+}
+
+function label(value) {
+  if (!value) return "—";
+  return String(value).toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function dateLabel(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(parsed);
+}
+
+function timeLabel(value) {
+  if (!value) return "Waiting for workbook";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Workbook loaded";
+  return `Updated ${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(parsed)}`;
+}
+
+function renderMetrics(metrics = {}) {
+  const cards = metricDefinitions.map(([key, title, primary]) => {
+    const card = createNode("article", `metric-card${primary ? " primary" : ""}`);
+    card.append(createNode("strong", "", metrics[key] ?? 0), createNode("span", "", title));
+    return card;
+  });
+  replaceChildren(elements.metrics, cards);
+}
+
+function populateSelect(select, values) {
+  const current = select.value;
+  const first = select.options[0].cloneNode(true);
+  const options = [first, ...(values || []).map((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label(value);
+    return option;
+  })];
+  replaceChildren(select, options);
+  select.value = values && values.includes(current) ? current : "";
+}
+
+function filteredJobs() {
+  const query = elements.search.value.trim().toLowerCase();
+  const jobs = state.jobs.filter((job) => {
+    const searchText = [job.company, job.title, job.location, job.notes].filter(Boolean).join(" ").toLowerCase();
+    return (!query || searchText.includes(query))
+      && (!elements.status.value || job.status === elements.status.value)
+      && (!elements.category.value || job.category === elements.category.value)
+      && (!elements.method.value || job.application_method === elements.method.value);
+  });
+
+  const sort = elements.sort.value;
+  return jobs.sort((left, right) => {
+    if (sort === "fit-desc") return (Number(right.fit_score) || -1) - (Number(left.fit_score) || -1);
+    if (sort === "company-asc") return String(left.company || "").localeCompare(String(right.company || ""));
+    return String(right.date_found || "").localeCompare(String(left.date_found || ""));
+  });
+}
+
+function renderTable() {
+  const jobs = filteredJobs();
+  elements.resultCount.textContent = `${jobs.length} ${jobs.length === 1 ? "job" : "jobs"}`;
+  elements.emptyState.hidden = jobs.length !== 0;
+
+  const rows = jobs.map((job) => {
+    const row = document.createElement("tr");
+    const opportunity = document.createElement("td");
+    opportunity.append(createNode("span", "job-title", job.title || "Untitled role"), createNode("span", "company", job.company || "Unknown company"));
+
+    const fit = document.createElement("td");
+    const hasFit = job.fit_score !== null && job.fit_score !== undefined && job.fit_score !== "";
+    fit.append(createNode("span", `fit-score${hasFit ? "" : " missing"}`, hasFit ? Math.round(Number(job.fit_score)) : "—"));
+
+    const status = document.createElement("td");
+    status.append(createNode("span", `pill status-${String(job.status || "unknown").toLowerCase().replaceAll("_", "-")}`, label(job.status)));
+
+    const method = document.createElement("td");
+    method.append(createNode("span", "pill", label(job.application_method)));
+
+    const linkCell = document.createElement("td");
+    if (job.job_url) {
+      const link = createNode("a", "open-link", "↗");
+      link.href = job.job_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.setAttribute("aria-label", `Open ${job.title || "job"} listing`);
+      linkCell.append(link);
+    }
+
+    row.append(
+      opportunity,
+      createNode("td", "", job.location || "—"),
+      fit,
+      status,
+      method,
+      createNode("td", "", dateLabel(job.date_found)),
+      linkCell,
+    );
+    return row;
+  });
+  replaceChildren(elements.jobsBody, rows);
+}
+
+function renderStatusBreakdown() {
+  const counts = new Map();
+  for (const job of state.jobs) counts.set(job.status || "UNKNOWN", (counts.get(job.status || "UNKNOWN") || 0) + 1);
+  const maximum = Math.max(1, ...counts.values());
+  const rows = [...counts.entries()].sort((left, right) => right[1] - left[1]).map(([status, count]) => {
+    const row = createNode("div", "status-row");
+    const heading = createNode("div", "status-label");
+    heading.append(createNode("span", "", label(status)), createNode("span", "", count));
+    const track = createNode("div", "status-track");
+    const bar = createNode("div", "status-bar");
+    bar.style.width = `${Math.max(3, (count / maximum) * 100)}%`;
+    track.append(bar);
+    row.append(heading, track);
+    return row;
+  });
+  replaceChildren(elements.statusBreakdown, rows.length ? rows : [createNode("p", "muted", "No jobs yet")]);
+}
+
+function renderSource(source) {
+  state.source = source;
+  elements.workbookName.textContent = source?.name || "";
+  elements.syncDot.className = `sync-dot${source?.stale ? " error" : " live"}`;
+  elements.syncLabel.textContent = source?.stale ? "Showing saved data" : "Live workbook connected";
+  elements.syncDetail.textContent = timeLabel(source?.loaded_at);
+  elements.warning.hidden = !source?.warning;
+  elements.warning.textContent = source?.warning || "";
+}
+
+function showError(message) {
+  elements.syncDot.className = "sync-dot error";
+  elements.syncLabel.textContent = "Workbook unavailable";
+  elements.syncDetail.textContent = "Check the tracker export and try again";
+  elements.warning.hidden = false;
+  elements.warning.textContent = message;
+}
+
+async function refresh() {
+  if (state.loading) return;
+  state.loading = true;
+  elements.refresh.disabled = true;
+  try {
+    const response = await fetch("/api/jobs", { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Dashboard data could not be loaded.");
+    state.jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+    renderMetrics(payload.metrics);
+    populateSelect(elements.status, payload.facets?.statuses);
+    populateSelect(elements.category, payload.facets?.categories);
+    populateSelect(elements.method, payload.facets?.methods);
+    renderSource(payload.source);
+    renderTable();
+    renderStatusBreakdown();
+  } catch (error) {
+    showError(error instanceof Error ? error.message : "Dashboard data could not be loaded.");
+  } finally {
+    state.loading = false;
+    elements.refresh.disabled = false;
+  }
+}
+
+for (const control of [elements.search, elements.status, elements.category, elements.method, elements.sort]) {
+  control.addEventListener(control === elements.search ? "input" : "change", renderTable);
+}
+elements.refresh.addEventListener("click", refresh);
+
+renderMetrics();
+refresh();
+setInterval(refresh, 5000);

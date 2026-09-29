@@ -343,6 +343,19 @@ At Git checkpoint `e688997`, the verified result was:
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
 
+### 8. Open the application dashboard
+
+Generate or refresh the Excel tracker, then start the local read-only dashboard:
+
+```powershell
+python -m app.dashboard.server --open-browser
+```
+
+The dashboard reads `data/exports/Job_Application_Tracker.xlsx` and refreshes
+the browser view every five seconds. It does not edit the workbook or change
+application state. See [docs/dashboard.md](docs/dashboard.md) for PyCharm and
+custom-path instructions.
+
 ## Useful Focused Tests
 
 For the current execution-browser work:
