@@ -11,6 +11,11 @@ form for assigning an explicitly reviewed Greenhouse, Lever, Ashby, or Workday
 application URL. The page checks the workbook every five seconds, so a newly
 generated export appears without restarting the server.
 
+Each persisted row also has a **Preview** action. Preview is read-only: it
+loads the exact source URL, validated ATS application target, selected resume,
+fit score, and current eligibility without starting a browser or running the
+application workflow.
+
 SQLite remains the authoritative application state, and the Excel workbook
 remains the human-facing tracker. A successful target review updates the same
 SQLite row, reruns the deterministic job pipeline, and regenerates Excel.
@@ -81,6 +86,35 @@ Every tracker refresh also exports the complete append-only audit log to the
 `Review History` worksheet. The sheet includes decision ID, job ID, company,
 title, review kind, outcome, note, and recorded timestamp, with Excel filters
 enabled for offline review.
+
+## Controlled application launch
+
+An eligible preview displays an explicit external-browser authorization
+checkbox. Checking it and selecting **Authorize and open application** sends a
+separate JSON POST for that exact job. Previewing alone never starts the
+workflow.
+
+The preview authorization is held only in server memory, expires after two
+minutes, and can be used once. It is bound to the job ID, source URL,
+application URL, ATS provider, resume, routing, and application status. The
+server reruns preflight immediately before launch. A changed job, an expired or
+reused token, the wrong job ID, or a missing confirmation stops before the
+launcher and browser.
+
+The controlled run preserves the existing safety order: preparation,
+inspection, deterministic form authorization, and exact external-target
+authorization must all succeed before the execution browser is created. The
+workflow fills only authorized fields, closes its managed execution session,
+and records `FORM_STARTED` only after a successful run. It cannot click Submit,
+confirm submission, or record `APPLIED`; those remain independent manual and
+post-review actions.
+
+The endpoints are:
+
+- `GET /api/jobs/{job_id}/application-preview` for browser-free preflight and
+  a fresh authorization token when eligible.
+- `POST /api/jobs/{job_id}/application-launch` for one explicitly confirmed
+  controlled run.
 
 The editable server must bind to `127.0.0.1`, `::1`, or `localhost`. Target
 assignment accepts JSON only and validates the pasted URL through the same

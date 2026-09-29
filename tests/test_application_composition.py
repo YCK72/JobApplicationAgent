@@ -44,6 +44,7 @@ from app.applications.composition import (
     build_application_inspection_service,
     build_application_run_coordinator,
     build_application_workflow,
+    build_single_job_application_launcher_from_dependencies,
     build_submission_confirmation_service,
 )
 from app.applications.execution_guard import (
@@ -66,6 +67,32 @@ from app.applications.workflow import (
 )
 from app.browser import BrowserSession
 from app.tracking.database import JobDatabase
+from app.tracking.excel_tracker import ExcelTracker
+
+
+def test_shared_single_job_launcher_composition_remains_browser_lazy(
+    tmp_path: Path,
+) -> None:
+    answers_path = tmp_path / "answers.yaml"
+    answers_path.write_text(
+        "first_name: Test\nlast_name: Candidate\n",
+        encoding="utf-8",
+    )
+    database = JobDatabase(tmp_path / "jobs.db")
+    tracker = ExcelTracker(database, tmp_path / "tracker.xlsx")
+    browser_factory = MagicMock()
+
+    launcher = build_single_job_application_launcher_from_dependencies(
+        database=database,
+        tracker=tracker,
+        answer_config_path=answers_path,
+        allowed_local_fixture=tmp_path / "fixture.html",
+        browser_session_factory=browser_factory,
+    )
+
+    assert launcher.database is database
+    assert launcher.tracker is tracker
+    browser_factory.assert_not_called()
 
 
 def test_registry_build_does_not_create_browser_session() -> None:

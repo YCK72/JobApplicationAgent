@@ -333,8 +333,31 @@ def build_single_job_application_launcher(
     authorization for a run. No component in this boundary submits forms.
     """
 
-    answer_resolver = build_application_answer_resolver(answer_config_path)
     database = JobDatabase(Path(database_path))
+    tracker = ExcelTracker(
+        database=database,
+        export_path=Path(export_path),
+    )
+    return build_single_job_application_launcher_from_dependencies(
+        database=database,
+        tracker=tracker,
+        answer_config_path=answer_config_path,
+        allowed_local_fixture=allowed_local_fixture,
+        browser_session_factory=browser_session_factory,
+    )
+
+
+def build_single_job_application_launcher_from_dependencies(
+    *,
+    database: JobDatabase,
+    tracker: ExcelTracker,
+    answer_config_path: Path | str = DEFAULT_APPLICATION_ANSWERS_PATH,
+    allowed_local_fixture: Path = DEFAULT_LOCAL_EXECUTION_FIXTURE,
+    browser_session_factory: BrowserSessionFactory = BrowserSession,
+) -> SingleJobApplicationLauncher:
+    """Compose a browser-lazy launcher around shared persistence services."""
+
+    answer_resolver = build_application_answer_resolver(answer_config_path)
     workflow = build_application_workflow(
         analyzer=ApplicationFormAnalyzer(answer_resolver),
         planner=ApplicationFormPlanner(),
@@ -347,10 +370,7 @@ def build_single_job_application_launcher(
     return SingleJobApplicationLauncher(
         database=database,
         coordinator=coordinator,
-        tracker=ExcelTracker(
-            database=database,
-            export_path=Path(export_path),
-        ),
+        tracker=tracker,
     )
 
 

@@ -15,6 +15,11 @@ from app.dashboard.application_preview import (
     ApplicationPreviewResult,
     ApplicationPreviewStatus,
 )
+from app.dashboard.application_launch import (
+    ApplicationLaunchResult,
+    ApplicationLaunchStatus,
+    PreparedApplicationPreview,
+)
 from app.dashboard.server import create_dashboard_server
 from app.dashboard.review_queue import build_review_queue_item
 from app.dashboard.review_resolution import (
@@ -328,6 +333,9 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             assert "history-kind-filter" in script
             assert "application-preview" in script
             assert "Preview" in script
+            assert "application-launch" in script
+            assert "AUTHORIZE_EXTERNAL_BROWSER" in script
+            assert "Authorize and open application" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()
@@ -747,13 +755,142 @@ def test_application_preview_api_is_read_only_and_never_runs_a_browser(
         thread.join(timeout=5)
 
 
-def test_dashboard_main_composes_browser_free_preview_service(
+def test_preview_issues_authorization_without_launching_workflow(
+    tmp_path: Path,
+) -> None:
+    preview = ApplicationPreviewResult(
+        status=ApplicationPreviewStatus.READY,
+        reason="Browser-free preflight passed.",
+        job_id=7,
+    )
+    launch_service = MagicMock()
+    launch_service.prepare.return_value = PreparedApplicationPreview(
+        preview=preview,
+        authorization_token="exact-preview-token",
+        authorization_expires_in_seconds=120,
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        application_launch_service=launch_service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        with urlopen(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/application-preview",
+            timeout=5,
+        ) as response:
+            payload = json.load(response)
+
+        assert payload["authorization"] == {
+            "token": "exact-preview-token",
+            "expires_in_seconds": 120,
+            "confirmation": "AUTHORIZE_EXTERNAL_BROWSER",
+        }
+        launch_service.prepare.assert_called_once_with(7)
+        launch_service.launch.assert_not_called()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_application_launch_api_requires_exact_explicit_authorization(
+    tmp_path: Path,
+) -> None:
+    launch_service = MagicMock()
+    launch_service.launch.return_value = ApplicationLaunchResult(
+        status=ApplicationLaunchStatus.READY_FOR_REVIEW,
+        reason="Authorized fields populated; human review required.",
+        job_id=7,
+        completed_actions=4,
+        application_status=ApplicationStatus.FORM_STARTED,
+        export_path=tmp_path / "tracker.xlsx",
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        application_launch_service=launch_service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        body = json.dumps({
+            "authorization_token": "exact-preview-token",
+            "confirmation": "AUTHORIZE_EXTERNAL_BROWSER",
+        }).encode("utf-8")
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/application-launch",
+            method="POST",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+
+        assert response.status == 200
+        assert payload["status"] == "READY_FOR_REVIEW"
+        assert payload["completed_actions"] == 4
+        assert payload["application_status"] == "FORM_STARTED"
+        assert payload["may_submit"] is False
+        launch_service.launch.assert_called_once_with(
+            job_id=7,
+            authorization_token="exact-preview-token",
+            confirmation="AUTHORIZE_EXTERNAL_BROWSER",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_application_launch_api_rejects_missing_authorization(
+    tmp_path: Path,
+) -> None:
+    launch_service = MagicMock()
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        application_launch_service=launch_service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/application-launch",
+            method="POST",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+        )
+        with pytest.raises(HTTPError) as error:
+            urlopen(request, timeout=5)
+
+        assert error.value.code == 400
+        launch_service.launch.assert_not_called()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_dashboard_main_composes_preview_and_launch_services(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     database = MagicMock()
     tracker = MagicMock()
     preview_service = MagicMock()
+    launch_service = MagicMock()
     http_server = MagicMock(server_port=8765)
     database_builder = MagicMock(return_value=database)
     tracker_builder = MagicMock(return_value=tracker)
@@ -765,6 +902,18 @@ def test_dashboard_main_composes_browser_free_preview_service(
         dashboard_server,
         "ApplicationPreviewService",
         preview_builder,
+    )
+    launch_builder = MagicMock(return_value=launch_service)
+    monkeypatch.setattr(
+        dashboard_server,
+        "DashboardApplicationLaunchService",
+        launch_builder,
+    )
+    launcher_builder = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(
+        dashboard_server,
+        "build_single_job_application_launcher_from_dependencies",
+        launcher_builder,
     )
     monkeypatch.setattr(
         dashboard_server,
@@ -786,9 +935,16 @@ def test_dashboard_main_composes_browser_free_preview_service(
 
     assert exit_code == 0
     preview_builder.assert_called_once_with(database=database)
+    launcher_builder.assert_called_once_with(
+        database=database,
+        tracker=tracker,
+    )
     assert server_builder.call_args.kwargs[
         "application_preview_service"
     ] is preview_service
+    assert server_builder.call_args.kwargs[
+        "application_launch_service"
+    ] is launch_service
     http_server.serve_forever.assert_called_once_with()
     http_server.server_close.assert_called_once_with()
 

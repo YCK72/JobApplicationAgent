@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1408 passed`
+**Latest verified full regression:** `1429 passed`
 
-**Most recently completed milestone:** **61C — review-history inspection and export**
+**Most recently completed milestone:** **62B — explicit dashboard launch authorization**
 
-**Current development milestone:** **62A — controlled dashboard application previews**
+**Current development milestone:** **62B — explicit dashboard launch authorization**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -360,7 +360,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1408 passed
+1429 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -384,6 +384,13 @@ Excel. Each queued item can also receive a durable `RESOLVED`, `DEFERRED`, or
 queue only; they never change application lifecycle status or authorize
 submission. The dashboard exposes read-only per-job history with outcome and
 review-kind filters, and Excel includes a separate `Review History` worksheet.
+Every persisted job also exposes a browser-free application preview with its
+exact source URL, validated ATS target, selected resume, and safety state. An
+eligible preview issues a short-lived, single-use authorization for that exact
+saved job state. The user must check the explicit authorization statement and
+start a separate controlled browser run. Changed, expired, reused, or
+wrong-job authorizations fail closed. A successful run stops at
+`FORM_STARTED` for human review and never submits or records `APPLIED`.
 See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
 instructions.
 

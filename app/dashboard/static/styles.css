@@ -179,6 +179,21 @@ tbody tr:hover { background: #fbfcfe; }
 .preview-field a { color: var(--blue); }
 .safety-list { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 8px; margin: 18px 0 0; padding: 0; list-style: none; }
 .safety-list li { padding: 10px 12px; border: 1px solid #c9d8fa; border-radius: 9px; color: #315784; background: var(--blue-soft); font-size: .72rem; font-weight: 750; }
+.launch-authorization { margin-top: 18px; padding: 16px; border: 1px solid #edc56e; border-radius: 11px; background: var(--warning-bg); }
+.launch-authorization > strong { color: #704205; font-size: .86rem; }
+.launch-authorization > p { margin: 6px 0 14px; color: #7b5c18; font-size: .76rem; line-height: 1.5; }
+.launch-consent { display: flex; align-items: start; gap: 9px; color: var(--ink); font-size: .78rem; font-weight: 700; line-height: 1.4; }
+.launch-consent input { width: 17px; height: 17px; margin: 0; accent-color: var(--blue); }
+.launch-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.launch-button { color: white; border-color: var(--blue); background: var(--blue); font-weight: 800; }
+.launch-button:hover { background: #2858c7; }
+.launch-expiry { color: #7b5c18; font-size: .7rem; }
+.launch-result { margin-top: 14px; padding: 14px; border-radius: 10px; }
+.launch-result strong, .launch-result span { display: block; }
+.launch-result p { margin: 5px 0; font-size: .78rem; line-height: 1.45; }
+.launch-result span { font-size: .72rem; }
+.launch-result.success { color: #106e5e; border: 1px solid #9edaca; background: #e7f7f3; }
+.launch-result.error { color: #9c3d43; border: 1px solid #efb9be; background: #fdecee; }
 .empty-state { padding: 54px 20px; text-align: center; }
 .empty-state strong, .empty-state span { display: block; }
 .empty-state span { margin-top: 6px; color: var(--muted); }
@@ -220,6 +235,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 20px
   .metric-card { padding: 14px; }
   .filters { grid-template-columns: 1fr; padding: 0 16px 18px; }
   .preview-grid, .safety-list { grid-template-columns: 1fr; }
+  .launch-actions { align-items: stretch; flex-direction: column; }
   .table-heading { padding: 20px 16px 14px; }
   footer { display: block; padding: 18px 20px; }
   footer span { display: block; margin-top: 4px; }

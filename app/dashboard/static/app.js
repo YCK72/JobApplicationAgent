@@ -6,6 +6,7 @@ const state = {
   resolvingJobId: null, resolutionOutcome: "DEFERRED", resolutionNote: "",
   history: [], historyJob: null,
   preview: null, previewJob: null,
+  launching: false,
 };
 const elements = {
   metrics: document.querySelector("#metrics"),
@@ -350,7 +351,84 @@ function renderApplicationPreview() {
     createNode("li", "", "Submission unavailable"),
     createNode("li", "", "External authorization required"),
   );
-  replaceChildren(elements.previewContent, [heading, grid, safety]);
+  const children = [heading, grid, safety];
+  if (preview.status === "READY" && preview.authorization?.token) {
+    const authorization = createNode("section", "launch-authorization");
+    authorization.append(
+      createNode("strong", "", "Explicit external-browser authorization"),
+      createNode("p", "", "This starts browser inspection and fills only authorized fields for this exact job. It does not submit the application."),
+    );
+    const consent = createNode("label", "launch-consent");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.disabled = state.launching;
+    const consentText = createNode("span", "", "I authorize external browser inspection and field filling for this exact job.");
+    consent.append(checkbox, consentText);
+    const actionRow = createNode("div", "launch-actions");
+    const launch = createNode("button", "launch-button", state.launching ? "Launching…" : "Authorize and open application");
+    launch.type = "button";
+    launch.disabled = true;
+    checkbox.addEventListener("change", () => {
+      launch.disabled = !checkbox.checked || state.launching;
+    });
+    launch.addEventListener("click", async () => {
+      if (!checkbox.checked || state.launching) return;
+      await launchApplication(preview, launch, checkbox);
+    });
+    actionRow.append(
+      launch,
+      createNode("span", "launch-expiry", `Authorization expires in ${preview.authorization.expires_in_seconds} seconds and can be used once.`),
+    );
+    authorization.append(consent, actionRow);
+    children.push(authorization);
+  }
+  replaceChildren(elements.previewContent, children);
+}
+
+async function launchApplication(preview, button, checkbox) {
+  state.launching = true;
+  button.disabled = true;
+  checkbox.disabled = true;
+  button.textContent = "Launching…";
+  elements.previewClose.disabled = true;
+  try {
+    const response = await fetch(`/api/jobs/${preview.job_id}/application-launch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        authorization_token: preview.authorization.token,
+        confirmation: "AUTHORIZE_EXTERNAL_BROWSER",
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || payload.reason || "Application launch was blocked.");
+    if (state.preview) state.preview.authorization = null;
+    const result = createNode("section", "launch-result success");
+    result.append(
+      createNode("strong", "", label(payload.status)),
+      createNode("p", "", payload.reason),
+      createNode("span", "", `${payload.completed_actions || 0} authorized actions completed. Submission remains unavailable.`),
+    );
+    elements.previewContent.append(result);
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice success";
+    elements.reviewNotice.textContent = "Application fields are ready for human review. The application was not submitted.";
+    await refresh();
+  } catch (error) {
+    if (state.preview) state.preview.authorization = null;
+    const result = createNode("section", "launch-result error");
+    result.append(
+      createNode("strong", "", "Launch stopped"),
+      createNode("p", "", error instanceof Error ? error.message : "Application launch was blocked."),
+      createNode("span", "", "Open a fresh preview before trying again."),
+    );
+    elements.previewContent.append(result);
+  } finally {
+    state.launching = false;
+    button.disabled = true;
+    checkbox.disabled = true;
+    elements.previewClose.disabled = false;
+  }
 }
 
 async function assignTarget(jobId) {
@@ -521,6 +599,7 @@ elements.previewClose.addEventListener("click", () => {
   elements.previewPanel.hidden = true;
   state.preview = null;
   state.previewJob = null;
+  state.launching = false;
 });
 
 renderMetrics();

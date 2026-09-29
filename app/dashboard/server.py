@@ -29,6 +29,14 @@ from app.dashboard.application_preview import (
     ApplicationPreviewService,
     ApplicationPreviewStatus,
 )
+from app.dashboard.application_launch import (
+    ApplicationLaunchStatus,
+    DashboardApplicationLaunchService,
+    EXTERNAL_BROWSER_CONFIRMATION,
+)
+from app.applications.composition import (
+    build_single_job_application_launcher_from_dependencies,
+)
 from app.jobs.composition import build_job_pipeline
 from app.tracking.database import DEFAULT_DB_PATH, JobDatabase
 from app.tracking.excel_tracker import ExcelTracker
@@ -59,6 +67,7 @@ class DashboardServer(ThreadingHTTPServer):
         target_review_service: ApplicationTargetReviewService | None,
         review_resolution_service: ApplicationReviewResolutionService | None,
         application_preview_service: ApplicationPreviewService | None,
+        application_launch_service: DashboardApplicationLaunchService | None,
     ) -> None:
         super().__init__(server_address, request_handler)
         self.reader = reader
@@ -66,6 +75,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.target_review_service = target_review_service
         self.review_resolution_service = review_resolution_service
         self.application_preview_service = application_preview_service
+        self.application_launch_service = application_launch_service
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -92,6 +102,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         )
         if match and self.server.review_resolution_service is not None:
             self._record_review_resolution(int(match.group(1)))
+            return
+        match = re.fullmatch(
+            r"/api/jobs/([1-9][0-9]*)/application-launch",
+            path,
+        )
+        if match and self.server.application_launch_service is not None:
+            self._launch_application(int(match.group(1)))
             return
         self._method_not_allowed()
 
@@ -125,9 +142,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             r"/api/jobs/([1-9][0-9]*)/application-preview",
             path,
         )
-        if (
-            preview_match
-            and self.server.application_preview_service is not None
+        if preview_match and (
+            self.server.application_preview_service is not None
+            or self.server.application_launch_service is not None
         ):
             self._serve_application_preview(
                 int(preview_match.group(1)),
@@ -241,7 +258,17 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         include_body: bool,
     ) -> None:
         try:
-            result = self.server.application_preview_service.preview(job_id)
+            launch_service = self.server.application_launch_service
+            prepared = (
+                launch_service.prepare(job_id)
+                if launch_service is not None
+                else None
+            )
+            result = (
+                prepared.preview
+                if prepared is not None
+                else self.server.application_preview_service.preview(job_id)
+            )
         except Exception:
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -257,6 +284,15 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             ApplicationPreviewStatus.FAILED: HTTPStatus.INTERNAL_SERVER_ERROR,
         }[result.status]
         job = result.job
+        authorization = None
+        if prepared is not None and prepared.authorization_token is not None:
+            authorization = {
+                "token": prepared.authorization_token,
+                "expires_in_seconds": (
+                    prepared.authorization_expires_in_seconds
+                ),
+                "confirmation": EXTERNAL_BROWSER_CONFIRMATION,
+            }
         self._send_json(
             status_code,
             {
@@ -286,8 +322,105 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     "files_uploaded": False,
                     "may_submit": result.may_submit,
                 },
+                "authorization": authorization,
             },
             include_body=include_body,
+        )
+
+    def _launch_application(self, job_id: int) -> None:
+        if self.headers.get_content_type() != "application/json":
+            self._send_json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"error": "Content-Type must be application/json."},
+                include_body=True,
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 1 <= length <= 8192:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must contain 1-8192 bytes."},
+                include_body=True,
+            )
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError):
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must be valid JSON."},
+                include_body=True,
+            )
+            return
+        if not isinstance(payload, dict):
+            payload = {}
+        token = payload.get("authorization_token")
+        confirmation = payload.get("confirmation")
+        if (
+            not isinstance(token, str)
+            or not token
+            or confirmation != EXTERNAL_BROWSER_CONFIRMATION
+        ):
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "error": (
+                        "A fresh preview token and exact external-browser "
+                        "confirmation are required."
+                    )
+                },
+                include_body=True,
+            )
+            return
+
+        try:
+            result = self.server.application_launch_service.launch(
+                job_id=job_id,
+                authorization_token=token,
+                confirmation=confirmation,
+            )
+        except Exception:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "Application launch failed unexpectedly."},
+                include_body=True,
+            )
+            return
+
+        status_code = {
+            ApplicationLaunchStatus.READY_FOR_REVIEW: HTTPStatus.OK,
+            ApplicationLaunchStatus.AUTHORIZATION_DENIED: HTTPStatus.FORBIDDEN,
+            ApplicationLaunchStatus.AUTHORIZATION_EXPIRED: HTTPStatus.FORBIDDEN,
+            ApplicationLaunchStatus.PREVIEW_STALE: HTTPStatus.CONFLICT,
+            ApplicationLaunchStatus.NOT_FOUND: HTTPStatus.NOT_FOUND,
+            ApplicationLaunchStatus.NOT_ELIGIBLE: HTTPStatus.CONFLICT,
+            ApplicationLaunchStatus.NEEDS_REVIEW: HTTPStatus.CONFLICT,
+            ApplicationLaunchStatus.BLOCKED: HTTPStatus.CONFLICT,
+            ApplicationLaunchStatus.FAILED: HTTPStatus.INTERNAL_SERVER_ERROR,
+        }[result.status]
+        self._send_json(
+            status_code,
+            {
+                "status": result.status.value,
+                "reason": result.reason,
+                "job_id": result.job_id,
+                "completed_actions": result.completed_actions,
+                "application_status": (
+                    result.application_status.value
+                    if result.application_status is not None
+                    else None
+                ),
+                "export_path": (
+                    str(result.export_path)
+                    if result.export_path is not None
+                    else None
+                ),
+                "may_submit": result.may_submit,
+            },
+            include_body=True,
         )
 
     def _assign_application_target(self, job_id: int) -> None:
@@ -479,6 +612,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if (
                 self.server.target_review_service is not None
                 or self.server.review_resolution_service is not None
+                or self.server.application_launch_service is not None
             )
             else "GET, HEAD"
         )
@@ -547,6 +681,7 @@ def create_dashboard_server(
     target_review_service: ApplicationTargetReviewService | None = None,
     review_resolution_service: ApplicationReviewResolutionService | None = None,
     application_preview_service: ApplicationPreviewService | None = None,
+    application_launch_service: DashboardApplicationLaunchService | None = None,
 ) -> DashboardServer:
     if not isinstance(port, int) or not 0 <= port <= 65535:
         raise ValueError("port must be an integer from 0 to 65535")
@@ -556,6 +691,7 @@ def create_dashboard_server(
         (
             target_review_service is not None
             or review_resolution_service is not None
+            or application_launch_service is not None
         )
         and host.strip().lower() not in {"127.0.0.1", "::1", "localhost"}
     ):
@@ -569,6 +705,7 @@ def create_dashboard_server(
         target_review_service=target_review_service,
         review_resolution_service=review_resolution_service,
         application_preview_service=application_preview_service,
+        application_launch_service=application_launch_service,
     )
 
 
@@ -615,6 +752,14 @@ def main(argv: list[str] | None = None) -> int:
             tracker=tracker,
         )
         preview_service = ApplicationPreviewService(database=database)
+        launcher = build_single_job_application_launcher_from_dependencies(
+            database=database,
+            tracker=tracker,
+        )
+        launch_service = DashboardApplicationLaunchService(
+            preview_service=preview_service,
+            launcher=launcher,
+        )
         server = create_dashboard_server(
             reader=TrackerWorkbookReader(args.workbook),
             host=args.host,
@@ -622,6 +767,7 @@ def main(argv: list[str] | None = None) -> int:
             target_review_service=reviewer,
             review_resolution_service=resolution_service,
             application_preview_service=preview_service,
+            application_launch_service=launch_service,
         )
     except (OSError, ValueError) as exc:
         print(f"Dashboard could not start: {exc}", file=sys.stderr)
