@@ -279,6 +279,23 @@ class JobDatabase:
 
         return [self._row_to_job(row) for row in rows]
 
+    def get_jobs_with_ids(self) -> list[tuple[int, Job]]:
+        """Return persisted job identities with their normalized records."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM jobs
+                ORDER BY date_found DESC, id DESC
+                """
+            ).fetchall()
+
+        return [
+            (int(row["id"]), self._row_to_job(row))
+            for row in rows
+        ]
+
     # ---------------------------------------------------------
     # Updates
     # ---------------------------------------------------------

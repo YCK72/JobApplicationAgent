@@ -7,9 +7,9 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1270 passed`
-**Most recently completed milestone:** **59A — persistent discovery-to-tracker runtime**
-**Current development milestone:** **59B — controlled single-job launch by exact persisted job ID**
+**Latest verified full regression:** `1292 passed`
+**Most recently completed milestone:** **59B — controlled single-job launch by exact persisted job ID**
+**Current development milestone:** **59C — explicit post-review submission confirmation command**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -337,7 +337,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1270 passed
+1292 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -369,6 +369,33 @@ python -m scripts.run_job_discovery `
 This command does not start the application workflow or open an execution
 browser. See [docs/composio_discovery.md](docs/composio_discovery.md) for its
 configuration, output, and exit-code contract.
+
+### 10. Prepare one exact job for human review
+
+List persisted jobs that are eligible to enter the controlled application
+workflow:
+
+```powershell
+python -m scripts.run_application --list-eligible
+```
+
+Preview one exact job without starting browser inspection:
+
+```powershell
+python -m scripts.run_application --job-id 123
+```
+
+After reviewing that output, explicitly authorize inspection and field mutation
+for that job:
+
+```powershell
+python -m scripts.run_application --job-id 123 --allow-external
+```
+
+A successful run stops at `FORM_STARTED` for human review and manual
+submission. It never clicks Submit or records `APPLIED`. See
+[docs/application_launcher.md](docs/application_launcher.md) for supported ATS
+and lifecycle details.
 
 ## Useful Focused Tests
 

@@ -12,6 +12,12 @@ from app.applications.batch_runner import (
 from app.applications.submission_confirmation import (
     SubmissionConfirmationService,
 )
+from app.applications.single_job import (
+    SingleJobApplicationLauncher,
+)
+from app.applications.answer_service import (
+    build_application_answer_resolver,
+)
 from app.applications.adapters.detector import (
     ATSProvider,
 )
@@ -53,6 +59,20 @@ from app.applications.workflow import (
 )
 from app.browser import BrowserSession
 from app.tracking.database import JobDatabase
+from app.tracking.excel_tracker import ExcelTracker
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_APPLICATION_DATABASE_PATH = PROJECT_ROOT / "database" / "jobs.db"
+DEFAULT_APPLICATION_EXPORT_PATH = (
+    PROJECT_ROOT / "data" / "exports" / "Job_Application_Tracker.xlsx"
+)
+DEFAULT_APPLICATION_ANSWERS_PATH = (
+    PROJECT_ROOT / "config" / "application_answers.yaml"
+)
+DEFAULT_LOCAL_EXECUTION_FIXTURE = (
+    PROJECT_ROOT / "data" / "fixtures" / "safe_application_form.html"
+)
 
 
 BrowserSessionFactory = Callable[[], BrowserSession]
@@ -184,6 +204,8 @@ def build_application_workflow(
         execution_guard=execution_guard,
         execution_session_factory=create_execution_session,
     )
+
+
 def build_application_run_coordinator(
     *,
     workflow: ApplicationWorkflow,
@@ -206,6 +228,8 @@ def build_application_run_coordinator(
     return ApplicationRunCoordinator(
         workflow=workflow,
     )
+
+
 def build_submission_confirmation_service(
     *,
     database: JobDatabase,
@@ -233,6 +257,7 @@ def build_submission_confirmation_service(
         database=database,
     )
 
+
 def build_application_batch_runner(
     *,
     coordinator: ApplicationRunCoordinator,
@@ -254,4 +279,40 @@ def build_application_batch_runner(
 
     return ApplicationBatchRunner(
         coordinator=coordinator,
+    )
+
+
+def build_single_job_application_launcher(
+    *,
+    database_path: Path | str = DEFAULT_APPLICATION_DATABASE_PATH,
+    export_path: Path | str = DEFAULT_APPLICATION_EXPORT_PATH,
+    answer_config_path: Path | str = DEFAULT_APPLICATION_ANSWERS_PATH,
+    allowed_local_fixture: Path = DEFAULT_LOCAL_EXECUTION_FIXTURE,
+    browser_session_factory: BrowserSessionFactory = BrowserSession,
+) -> SingleJobApplicationLauncher:
+    """Compose the exact-ID controlled application launch boundary.
+
+    Composition loads verified ordinary answers but remains browser-lazy.
+    External execution is still denied until the launcher receives explicit
+    authorization for a run. No component in this boundary submits forms.
+    """
+
+    answer_resolver = build_application_answer_resolver(answer_config_path)
+    database = JobDatabase(Path(database_path))
+    workflow = build_application_workflow(
+        analyzer=ApplicationFormAnalyzer(answer_resolver),
+        planner=ApplicationFormPlanner(),
+        database=database,
+        allowed_local_fixture=allowed_local_fixture,
+        browser_session_factory=browser_session_factory,
+    )
+    coordinator = build_application_run_coordinator(workflow=workflow)
+
+    return SingleJobApplicationLauncher(
+        database=database,
+        coordinator=coordinator,
+        tracker=ExcelTracker(
+            database=database,
+            export_path=Path(export_path),
+        ),
     )
