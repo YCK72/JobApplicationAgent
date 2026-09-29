@@ -12,6 +12,7 @@ from app.scoring.fit_gate import FitGate
 from app.jobs.classifier import RoleClassifier
 from app.jobs.company_router import CompanyRouter
 from app.jobs.filters import JobFilter
+from app.jobs.eligibility import JobEligibilityGate
 from app.jobs.models import Job
 from app.jobs.pipeline import JobPipeline
 from app.scoring.fit_scorer import FitScorer
@@ -43,6 +44,7 @@ def build_pipeline(database: JobDatabase) -> JobPipeline:
         fit_gate=FitGate(role_config),
         resume_router=ResumeRouter(candidate_config),
         database=database,
+        eligibility_gate=JobEligibilityGate(candidate_config),
     )
 
 

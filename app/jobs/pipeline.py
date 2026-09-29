@@ -12,6 +12,7 @@ from app.jobs.deduplicator import (
     JobDeduplicator,
 )
 from app.jobs.filters import JobFilter
+from app.jobs.eligibility import JobEligibilityGate, EligibilityStatus
 from app.jobs.models import (
     ApplicationMethod,
     ApplicationStatus,
@@ -68,11 +69,12 @@ class JobPipeline:
         3. Role classification
         4. Seniority / eligibility filtering
         5. Blocked-company protection
-        6. Fit scoring
-        7. Manual-company protection
-        8. Fit-score gating for AUTO companies
-        9. Resume routing for HIGH-fit AUTO jobs
-        10. SQLite persistence
+        6. Candidate eligibility (stop mismatches or unresolved requirements)
+        7. Fit scoring
+        8. Manual-company protection
+        9. Fit-score gating for AUTO companies
+        10. Resume routing for HIGH-fit AUTO jobs
+        11. SQLite persistence
 
     This pipeline does NOT open a browser, fill application forms,
     or submit applications.
@@ -88,6 +90,7 @@ class JobPipeline:
         fit_gate: FitGate,
         resume_router: ResumeRouter,
         database: JobDatabase,
+        eligibility_gate: JobEligibilityGate | None = None,
     ) -> None:
         self.company_router = company_router
         self.classifier = classifier
@@ -96,6 +99,11 @@ class JobPipeline:
         self.fit_gate = fit_gate
         self.resume_router = resume_router
         self.database = database
+        self.eligibility_gate = (
+            eligibility_gate
+            if eligibility_gate is not None
+            else JobEligibilityGate()
+        )
 
     @staticmethod
     def _append_note(
@@ -229,6 +237,34 @@ class JobPipeline:
                     "Application processing stopped."
                 ),
                 job_id=job_id,
+            )
+
+        eligibility = self.eligibility_gate.evaluate(job)
+        if eligibility.status != EligibilityStatus.CLEAR:
+            job.resume_used = None
+            job.fit_score = None
+            job.fit_explanation = None
+            review = eligibility.status == EligibilityStatus.NEEDS_REVIEW
+            job.status = (
+                ApplicationStatus.NEEDS_REVIEW
+                if review
+                else ApplicationStatus.FILTERED_OUT
+            )
+            job.application_method = (
+                ApplicationMethod.REVIEW
+                if review
+                else ApplicationMethod.UNKNOWN
+            )
+            self._append_note(job, f"Eligibility: {eligibility.reason}")
+            return PipelineResult(
+                job=job,
+                outcome=(
+                    PipelineOutcome.MANUAL_REVIEW
+                    if review
+                    else PipelineOutcome.FILTERED_OUT
+                ),
+                reason=eligibility.reason,
+                job_id=self._persist(job),
             )
 
         # -----------------------------------------------------

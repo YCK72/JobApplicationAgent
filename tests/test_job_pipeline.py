@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -1270,3 +1271,63 @@ def test_non_us_job_is_filtered_before_fit_scoring(
 
         assert stored.fit_score is None
         assert stored.resume_used is None
+
+@pytest.mark.parametrize(
+    "description,expected_outcome,expected_status",
+    [
+        (
+            "Visa sponsorship is not available.",
+            PipelineOutcome.MANUAL_REVIEW,
+            ApplicationStatus.NEEDS_REVIEW,
+        ),
+        (
+            "Graduation date between December 2026 and August 2027.",
+            PipelineOutcome.FILTERED_OUT,
+            ApplicationStatus.FILTERED_OUT,
+        ),
+    ],
+)
+def test_eligibility_stops_before_scoring_or_resume_routing(
+    pipeline, database, description, expected_outcome, expected_status,
+):
+    from app.jobs.eligibility import JobEligibilityGate
+
+    pipeline.eligibility_gate = JobEligibilityGate(
+        {
+            "candidate": {
+                "education": {
+                    "highest_degree": {
+                        "graduation": {
+                            "year": 2026,
+                            "month": 5,
+                        },
+                    },
+                },
+            },
+        }
+    )
+    pipeline.fit_scorer.score_job = MagicMock()
+    pipeline.resume_router.route_job = MagicMock()
+    candidate_job = make_job(description=description)
+    candidate_job.resume_used = "stale-resume.pdf"
+    result = pipeline.process(candidate_job)
+    assert result.outcome == expected_outcome
+    assert result.job.status == expected_status
+    assert result.job.resume_used is None
+    assert not result.should_continue
+    assert "Eligibility:" in result.job.notes
+    pipeline.fit_scorer.score_job.assert_not_called()
+    pipeline.resume_router.route_job.assert_not_called()
+    assert database.get_all_jobs()[0].status == expected_status
+
+
+def test_default_pipeline_does_not_bypass_unknown_eligibility(pipeline):
+    result = pipeline.process(
+        make_job(
+            description=(
+                "Must hold an active Secret clearance."
+            )
+        )
+    )
+    assert result.outcome == PipelineOutcome.MANUAL_REVIEW
+    assert not result.should_continue
