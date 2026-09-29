@@ -3,6 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from app.applications.run_coordinator import (
+    ApplicationRunCoordinator,
+)
+from app.applications.batch_runner import (
+    ApplicationBatchRunner,
+)
 from app.applications.submission_confirmation import (
     SubmissionConfirmationService,
 )
@@ -177,6 +183,28 @@ def build_application_workflow(
         execution_guard=execution_guard,
         browser_executor=browser_executor,
     )
+def build_application_run_coordinator(
+    *,
+    workflow: ApplicationWorkflow,
+) -> ApplicationRunCoordinator:
+    """
+    Compose the runtime boundary that forwards only eligible,
+    persisted pipeline results into ApplicationWorkflow.
+
+    Building the coordinator does not:
+
+    - run discovery or the job pipeline,
+    - launch a browser,
+    - authorize external execution,
+    - fill application fields,
+    - submit applications,
+    - confirm submission,
+    - mark jobs APPLIED.
+    """
+
+    return ApplicationRunCoordinator(
+        workflow=workflow,
+    )
 def build_submission_confirmation_service(
     *,
     database: JobDatabase,
@@ -202,4 +230,27 @@ def build_submission_confirmation_service(
 
     return SubmissionConfirmationService(
         database=database,
+    )
+
+def build_application_batch_runner(
+    *,
+    coordinator: ApplicationRunCoordinator,
+) -> ApplicationBatchRunner:
+    """
+    Compose the batch boundary that processes pipeline results through
+    the controlled single-result application coordinator.
+
+    Building this runner does not:
+
+    - discover jobs,
+    - run JobPipeline,
+    - launch a browser,
+    - authorize external execution,
+    - submit applications,
+    - confirm submission,
+    - mark jobs APPLIED.
+    """
+
+    return ApplicationBatchRunner(
+        coordinator=coordinator,
     )

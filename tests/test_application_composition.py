@@ -4,6 +4,9 @@ from unittest.mock import MagicMock
 from app.applications.submission_confirmation import (
     SubmissionConfirmationService,
 )
+from app.applications.run_coordinator import (
+    ApplicationRunCoordinator,
+)
 from app.jobs.models import (
     ApplicationStatus,
     Job,
@@ -20,9 +23,14 @@ from app.applications.adapters.greenhouse import (
 from app.applications.browser_form_executor import (
     BrowserFormExecutor,
 )
+from app.applications.batch_runner import (
+    ApplicationBatchRunner,
+)
 from app.applications.composition import (
     build_application_adapter_registry,
+    build_application_batch_runner,
     build_application_inspection_service,
+    build_application_run_coordinator,
     build_application_workflow,
     build_submission_confirmation_service,
 )
@@ -626,4 +634,158 @@ def test_workflow_and_confirmation_service_remain_separate_lifecycle_boundaries(
     assert not hasattr(
         confirmation_service,
         "submit",
+    )
+
+def test_build_application_run_coordinator_preserves_workflow_identity(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "run_coordinator_composition_test.db"
+    )
+
+    workflow = build_application_workflow(
+        analyzer=MagicMock(
+            spec=ApplicationFormAnalyzer
+        ),
+        planner=MagicMock(
+            spec=ApplicationFormPlanner
+        ),
+        database=database,
+        writer=MagicMock(),
+        allowed_local_fixture=(
+            tmp_path / "application_fixture.html"
+        ),
+    )
+
+    coordinator = build_application_run_coordinator(
+        workflow=workflow,
+    )
+
+    assert isinstance(
+        coordinator,
+        ApplicationRunCoordinator,
+    )
+
+    assert coordinator.workflow is workflow
+
+
+def test_build_application_run_coordinator_has_no_submission_capability(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "run_coordinator_submission_test.db"
+    )
+
+    workflow = build_application_workflow(
+        analyzer=MagicMock(
+            spec=ApplicationFormAnalyzer
+        ),
+        planner=MagicMock(
+            spec=ApplicationFormPlanner
+        ),
+        database=database,
+        writer=MagicMock(),
+        allowed_local_fixture=(
+            tmp_path / "application_fixture.html"
+        ),
+    )
+
+    coordinator = build_application_run_coordinator(
+        workflow=workflow,
+    )
+
+    assert not hasattr(
+        coordinator,
+        "submit",
+    )
+
+    assert not hasattr(
+        coordinator,
+        "confirm_submission",
+    )
+
+    assert not hasattr(
+        coordinator,
+        "submission_confirmation_service",
+    )
+
+def test_build_application_batch_runner_preserves_coordinator_identity(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "batch_runner_composition_test.db"
+    )
+
+    workflow = build_application_workflow(
+        analyzer=MagicMock(
+            spec=ApplicationFormAnalyzer
+        ),
+        planner=MagicMock(
+            spec=ApplicationFormPlanner
+        ),
+        database=database,
+        writer=MagicMock(),
+        allowed_local_fixture=(
+            tmp_path / "application_fixture.html"
+        ),
+    )
+
+    coordinator = build_application_run_coordinator(
+        workflow=workflow,
+    )
+
+    batch_runner = build_application_batch_runner(
+        coordinator=coordinator,
+    )
+
+    assert isinstance(
+        batch_runner,
+        ApplicationBatchRunner,
+    )
+
+    assert batch_runner.coordinator is coordinator
+
+
+def test_build_application_batch_runner_has_no_submission_capability(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(
+        tmp_path / "batch_runner_submission_test.db"
+    )
+
+    workflow = build_application_workflow(
+        analyzer=MagicMock(
+            spec=ApplicationFormAnalyzer
+        ),
+        planner=MagicMock(
+            spec=ApplicationFormPlanner
+        ),
+        database=database,
+        writer=MagicMock(),
+        allowed_local_fixture=(
+            tmp_path / "application_fixture.html"
+        ),
+    )
+
+    coordinator = build_application_run_coordinator(
+        workflow=workflow,
+    )
+
+    batch_runner = build_application_batch_runner(
+        coordinator=coordinator,
+    )
+
+    assert not hasattr(
+        batch_runner,
+        "submit",
+    )
+
+    assert not hasattr(
+        batch_runner,
+        "confirm_submission",
+    )
+
+    assert not hasattr(
+        batch_runner,
+        "submission_confirmation_service",
     )
