@@ -3,7 +3,7 @@
 The dashboard is a local view of the exported Excel application tracker. It
 shows pipeline totals, status distribution, job links, and a searchable
 application table. For unresolved LinkedIn records, it also provides a guarded
-form for assigning an explicitly reviewed Greenhouse, Lever, or Ashby
+form for assigning an explicitly reviewed Greenhouse, Lever, Ashby, or Workday
 application URL. The page checks the workbook every five seconds, so a newly
 generated export appears without restarting the server.
 
@@ -52,6 +52,6 @@ new workbook data after a later refresh succeeds.
 The editable server must bind to `127.0.0.1`, `::1`, or `localhost`. Target
 assignment accepts JSON only and validates the pasted URL through the same
 HTTPS-only application-target resolver used by the application workflow.
-Greenhouse, Lever, and Ashby are the enabled ATS providers. The dashboard never
+Greenhouse, Lever, Ashby, and Workday are the enabled ATS providers. The dashboard never
 guesses a URL, follows a redirect, opens an execution browser, fills a form, or
 submits an application.

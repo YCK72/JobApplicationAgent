@@ -110,13 +110,17 @@ def test_trailing_dot_hostname_is_supported():
     )
 
 
-def test_workday_root_domain_is_detected():
-    assert (
-        ATSDetector.detect(
-            "https://myworkdayjobs.com/jobs/123"
-        )
-        == ATSProvider.WORKDAY
-    )
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://myworkdayjobs.com/jobs/123",
+        "https://company.myworkdayjobs.com/jobs/123",
+        "https://wd1.myworkdayjobs.com/jobs/123",
+        "https://company.wdx.myworkdayjobs.com/jobs/123",
+    ],
+)
+def test_malformed_workday_hosts_fail_closed(url):
+    assert ATSDetector.detect(url) == ATSProvider.UNKNOWN
 
 
 def test_non_string_input_fails_closed():

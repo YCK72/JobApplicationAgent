@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from enum import Enum
 from urllib.parse import urlparse
 
@@ -91,7 +92,7 @@ class ATSDetector:
             company.wd5.myworkdayjobs.com
         """
 
-        return (
-            hostname.endswith(".myworkdayjobs.com")
-            or hostname == "myworkdayjobs.com"
-        )
+        return re.fullmatch(
+            r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.wd\d+\.myworkdayjobs\.com",
+            hostname,
+        ) is not None

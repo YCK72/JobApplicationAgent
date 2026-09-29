@@ -43,6 +43,7 @@ class ApplicationTargetResolver:
                 ATSProvider.GREENHOUSE,
                 ATSProvider.LEVER,
                 ATSProvider.ASHBY,
+                ATSProvider.WORKDAY,
             }
         )
 
@@ -75,6 +76,12 @@ class ApplicationTargetResolver:
             if (
                 provider == ATSProvider.ASHBY
                 and not self._is_ashby_application_path(canonical)
+            ):
+                saw_invalid = True
+                continue
+            if (
+                provider == ATSProvider.WORKDAY
+                and not self._is_workday_manual_application_path(canonical)
             ):
                 saw_invalid = True
                 continue
@@ -148,6 +155,20 @@ class ApplicationTargetResolver:
         return (
             len(path_segments) == 3
             and path_segments[-1].lower() == "application"
+        )
+
+    @staticmethod
+    def _is_workday_manual_application_path(url: str) -> bool:
+        path_segments = [
+            segment
+            for segment in urlsplit(url).path.split("/")
+            if segment
+        ]
+        lowered = [segment.lower() for segment in path_segments]
+        return (
+            len(path_segments) >= 6
+            and "job" in lowered[:-2]
+            and lowered[-2:] == ["apply", "applymanually"]
         )
 
 

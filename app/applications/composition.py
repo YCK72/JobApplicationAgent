@@ -29,6 +29,7 @@ from app.applications.adapters.greenhouse import (
     GreenhouseFormAdapter,
 )
 from app.applications.adapters.lever import LeverFormAdapter
+from app.applications.adapters.workday import WorkdayFormAdapter
 from app.applications.adapters.registry import (
     ApplicationAdapterRegistry,
 )
@@ -119,6 +120,14 @@ def build_application_adapter_registry(
             browser_session=browser_session_factory(),
         )
 
+    def create_workday_adapter(
+        job_url: str,
+    ) -> WorkdayFormAdapter:
+        return WorkdayFormAdapter(
+            job_url=job_url,
+            browser_session=browser_session_factory(),
+        )
+
     return ApplicationAdapterRegistry(
         {
             ATSProvider.GREENHOUSE:
@@ -127,6 +136,8 @@ def build_application_adapter_registry(
                 create_lever_adapter,
             ATSProvider.ASHBY:
                 create_ashby_adapter,
+            ATSProvider.WORKDAY:
+                create_workday_adapter,
         }
     )
 

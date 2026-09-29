@@ -56,11 +56,14 @@ regenerated so the dashboard reflects the new state. Human review and manual
 submission remain required. Only the independent submission-confirmation
 service may later record `APPLIED` from supplied evidence.
 
-Greenhouse, Lever, and Ashby are production-composed ATS adapters. Each adapter
+Greenhouse, Lever, Ashby, and Workday are production-composed ATS adapters. Each adapter
 uses a fresh read-only inspection browser and must return a form whose provider
 and exact job location match the selected target. Ashby additionally requires
-an explicit `/{organization}/{posting}/application` path and rejects an empty
-rendered form. A persisted LinkedIn URL or an unsupported ATS cannot fall back
+an explicit `/{organization}/{posting}/application` path. Workday requires an
+exact tenant host and a `/job/.../apply/applyManually` target. Because Workday
+applications reveal questions across multiple pages, inspection always adds a
+manual-review boundary and cannot authorize execution from the partial form.
+Both adapters reject an empty rendered form. A persisted LinkedIn URL or an unsupported ATS cannot fall back
 to another adapter; it is moved to `NEEDS_REVIEW` by the inspection service.
 
 ## PyCharm configuration

@@ -148,7 +148,7 @@ function renderTable() {
         const input = createNode("input", "target-input");
         input.type = "url";
         input.required = true;
-        input.placeholder = "Paste Greenhouse application URL";
+        input.placeholder = "Paste supported ATS application URL";
         input.value = state.targetDraft;
         input.setAttribute("aria-label", `Application URL for ${job.title || "job"}`);
         input.addEventListener("input", () => { state.targetDraft = input.value; });

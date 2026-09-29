@@ -31,6 +31,7 @@ from app.applications.adapters.greenhouse import (
     GreenhouseFormAdapter,
 )
 from app.applications.adapters.lever import LeverFormAdapter
+from app.applications.adapters.workday import WorkdayFormAdapter
 from app.applications.browser_form_executor import (
     BrowserFormExecutor,
 )
@@ -79,6 +80,7 @@ def test_registry_build_does_not_create_browser_session() -> None:
     )
     assert registry.has_adapter(ATSProvider.LEVER)
     assert registry.has_adapter(ATSProvider.ASHBY)
+    assert registry.has_adapter(ATSProvider.WORKDAY)
 
     browser_factory.assert_not_called()
 
@@ -111,6 +113,25 @@ def test_ashby_adapter_is_created_lazily() -> None:
 
     browser_factory.assert_called_once_with()
     assert isinstance(adapter, AshbyFormAdapter)
+    assert adapter.job_url == url
+    assert adapter.browser_session is browser_session
+
+
+def test_workday_adapter_is_created_lazily() -> None:
+    browser_session = MagicMock(spec=BrowserSession)
+    browser_factory = MagicMock(return_value=browser_session)
+    registry = build_application_adapter_registry(
+        browser_session_factory=browser_factory,
+    )
+    url = (
+        "https://example.wd1.myworkdayjobs.com/en-US/External/job/"
+        "Software-Engineer_R123/apply/applyManually"
+    )
+
+    adapter = registry.create(ATSProvider.WORKDAY, url)
+
+    browser_factory.assert_called_once_with()
+    assert isinstance(adapter, WorkdayFormAdapter)
     assert adapter.job_url == url
     assert adapter.browser_session is browser_session
 
@@ -319,6 +340,9 @@ def test_build_application_workflow_composes_controlled_layers(
     )
     assert workflow._inspection_service.registry.has_adapter(
         ATSProvider.ASHBY
+    )
+    assert workflow._inspection_service.registry.has_adapter(
+        ATSProvider.WORKDAY
     )
 
 

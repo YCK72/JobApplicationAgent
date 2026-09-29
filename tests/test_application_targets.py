@@ -10,6 +10,7 @@ from app.applications.target_resolver import (
     ApplicationTargetResolver,
     ApplicationTargetStatus,
 )
+from app.applications.adapters.detector import ATSProvider
 from app.discovery.composio import LinkedInComposioJobSource
 from app.discovery.greenhouse import GreenhouseJobSource
 from app.jobs.models import ApplicationStatus, Job
@@ -73,6 +74,10 @@ def test_resolver_removes_explicit_default_https_port() -> None:
         "http://jobs.ashbyhq.com/example/123/application",
         "https://jobs.ashbyhq.com.evil.example/example/123/application",
         "https://jobs.ashbyhq.com/example/123",
+        "http://example.wd1.myworkdayjobs.com/en-US/External/job/Role_R123/apply/applyManually",
+        "https://example.wd1.myworkdayjobs.com.evil.example/en-US/External/job/Role_R123/apply/applyManually",
+        "https://myworkdayjobs.com/en-US/External/job/Role_R123/apply/applyManually",
+        "https://example.wd1.myworkdayjobs.com/en-US/External/job/Role_R123",
         "javascript:alert(1)",
     ],
 )
@@ -102,10 +107,30 @@ def test_resolver_accepts_explicit_ashby_target_by_default() -> None:
     assert result.provider.value == "ASHBY"
 
 
-def test_resolver_still_rejects_unenabled_known_ats() -> None:
+def test_resolver_accepts_explicit_workday_manual_target_by_default() -> None:
     result = ApplicationTargetResolver().resolve(
-        ["https://example.wd1.myworkdayjobs.com/en-US/jobs/123"]
+        [
+            "https://example.wd1.myworkdayjobs.com/en-US/External/job/"
+            "Role_R123/apply/applyManually?source=review#form"
+        ]
     )
+
+    assert result.status == ApplicationTargetStatus.RESOLVED
+    assert result.application_url == (
+        "https://example.wd1.myworkdayjobs.com/en-US/External/job/"
+        "Role_R123/apply/applyManually"
+    )
+    assert result.provider == ATSProvider.WORKDAY
+
+
+def test_resolver_rejects_workday_when_not_explicitly_enabled() -> None:
+    result = ApplicationTargetResolver(
+        supported_providers={ATSProvider.GREENHOUSE},
+    ).resolve([
+        "https://example.wd1.myworkdayjobs.com/en-US/External/job/"
+        "Role_R123/apply/applyManually"
+    ])
+
     assert result.status == ApplicationTargetStatus.UNSUPPORTED
     assert result.application_url is None
 
