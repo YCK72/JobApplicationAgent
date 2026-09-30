@@ -7,7 +7,7 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1480 passed`
+**Latest verified full regression:** `1481 passed`
 
 **Most recently completed milestone:** **64 — Verified LinkedIn application-target discovery**
 

@@ -144,16 +144,13 @@ class JobPipeline:
         Compare the incoming job with jobs already stored in SQLite.
         """
 
-        existing_jobs = [
-            existing_job
-            for job_id, existing_job in self.database.get_jobs_with_ids()
-            if job_id != existing_job_id
-        ]
-
-        return JobDeduplicator.find_duplicate(
-            job,
-            existing_jobs,
-        )
+        for job_id, existing_job in self.database.get_jobs_with_ids():
+            if job_id == existing_job_id:
+                continue
+            result = JobDeduplicator.compare(job, existing_job)
+            if result.is_duplicate:
+                return result, job_id
+        return JobDeduplicator.find_duplicate(job, ()), None
 
     def process(
         self,
@@ -183,6 +180,27 @@ class JobPipeline:
         job.resume_used = None
         return self._process(job, existing_job_id=job_id)
 
+    @staticmethod
+    def _may_enrich_application_target(
+        *,
+        incoming: Job,
+        existing: Job | None,
+    ) -> bool:
+        return (
+            existing is not None
+            and incoming.source == "linkedin_composio"
+            and existing.source == "linkedin_composio"
+            and incoming.application_url is not None
+            and existing.application_url is None
+            and existing.status
+            in {
+                ApplicationStatus.DISCOVERED,
+                ApplicationStatus.NEEDS_REVIEW,
+                ApplicationStatus.NEEDS_APPLICATION,
+                ApplicationStatus.READY_TO_APPLY,
+            }
+        )
+
     def _process(
         self,
         job: Job,
@@ -201,9 +219,34 @@ class JobPipeline:
         # 2. Duplicate detection
         # -----------------------------------------------------
 
-        duplicate_result = self._find_duplicate(job, existing_job_id)
+        duplicate_result, duplicate_job_id = self._find_duplicate(
+            job,
+            existing_job_id,
+        )
 
         if duplicate_result.is_duplicate:
+            matched_job = duplicate_result.matched_job
+            if self._may_enrich_application_target(
+                incoming=job,
+                existing=matched_job,
+            ):
+                if duplicate_job_id is None or matched_job is None:
+                    raise RuntimeError(
+                        "Duplicate target enrichment lost persisted identity."
+                    )
+                enriched = matched_job.model_copy(
+                    update={
+                        "application_url": job.application_url,
+                        "description": job.description,
+                        "date_posted": job.date_posted,
+                    }
+                )
+                self._append_note(
+                    enriched,
+                    "Application target: exact supported ATS target was "
+                    "resolved during rediscovery.",
+                )
+                return self.reprocess(duplicate_job_id, enriched)
             reason_text = (
                 duplicate_result.reason.value
                 if duplicate_result.reason

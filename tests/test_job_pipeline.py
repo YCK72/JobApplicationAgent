@@ -333,6 +333,7 @@ def make_job(
     url="https://example.com/jobs/123",
     location="Seattle, WA",
     external_job_id=None,
+    application_url=None,
 ):
     return Job(
         company=company,
@@ -342,6 +343,7 @@ def make_job(
         url=url,
         source="Test",
         external_job_id=external_job_id,
+        application_url=application_url,
     )
 
 
@@ -810,6 +812,40 @@ def test_exact_url_duplicate_is_not_inserted_twice(
     assert len(
         database.get_all_jobs()
     ) == 1
+
+
+def test_duplicate_linkedin_job_enriches_missing_application_target(
+    pipeline,
+    database,
+):
+    source_url = "https://www.linkedin.com/jobs/view/12345"
+    first = make_job(url=source_url)
+    first.source = "linkedin_composio"
+
+    first_result = pipeline.process(first)
+
+    assert first_result.outcome == PipelineOutcome.MANUAL_REVIEW
+    assert first_result.job_id is not None
+
+    enriched = make_job(
+        url=source_url,
+        application_url=(
+            "https://job-boards.greenhouse.io/example/jobs/123"
+        ),
+    )
+    enriched.source = "linkedin_composio"
+
+    result = pipeline.process(enriched)
+
+    assert result.outcome == PipelineOutcome.AUTO_READY
+    assert result.job_id == first_result.job_id
+    assert len(database.get_all_jobs()) == 1
+    stored = database.get_job_by_id(first_result.job_id)
+    assert stored is not None
+    assert stored.application_url is not None
+    assert stored.application_url.encoded_string() == (
+        "https://job-boards.greenhouse.io/example/jobs/123"
+    )
 
 
 def test_tracking_parameter_duplicate_is_detected(
