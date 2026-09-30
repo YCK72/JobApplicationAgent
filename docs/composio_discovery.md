@@ -104,6 +104,13 @@ output setup failed.
   from ISO dates on live result cards; relative date labels are not guessed.
   Search coverage is not guaranteed, and fetched page content may be cached,
   so the independent public identity check remains the final availability gate.
+- If the fetched posting has no explicit Apply URL, production performs one
+  additional bounded search for the quoted job title, quoted company, and the
+  word `apply`. Generated answer text is ignored. A target is accepted only
+  when one citation's visible evidence contains the complete normalized title
+  and company and its URL passes the existing Greenhouse, Lever, Ashby, or
+  Workday validator. No match and multiple matches both fail closed into the
+  existing review path.
 - HTTP failures, schema errors and timeouts raise `ComposioDiscoveryError`.
   No automatic retries, broad searches, pagination or account fallback occur.
   Re-run intentionally after resolving rate limits or credentials.

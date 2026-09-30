@@ -18,6 +18,10 @@ from bs4 import BeautifulSoup
 
 from app.discovery.base import JobSource, RawJobPosting
 from app.applications.target_resolver import ApplicationTargetResolver
+from app.discovery.target_search import (
+    ApplicationTargetSearchResolver,
+    TargetSearchStatus,
+)
 from app.jobs.models import Job
 
 
@@ -421,6 +425,9 @@ class LinkedInComposioJobSource(JobSource):
         query: str,
         max_results: int = 5,
         availability_checker: LinkedInAvailabilityChecker | None = None,
+        application_target_search: (
+            ApplicationTargetSearchResolver | None
+        ) = None,
     ) -> None:
         if not isinstance(query, str) or not query.strip():
             raise ValueError("query must not be empty")
@@ -430,6 +437,7 @@ class LinkedInComposioJobSource(JobSource):
         self.query = query.strip()
         self.max_results = max_results
         self.availability_checker = availability_checker
+        self.application_target_search = application_target_search
         self.last_candidate_count = 0
         self.last_skipped_count = 0
 
@@ -508,8 +516,23 @@ class LinkedInComposioJobSource(JobSource):
         target = ApplicationTargetResolver().resolve(
             self._explicit_application_targets(page)
         )
+        target_status = target.status.value
+        target_reason = target.reason
+        application_url = target.application_url
+        if (
+            application_url is None
+            and self.application_target_search is not None
+        ):
+            searched = self.application_target_search.resolve(
+                company=fields["company"],
+                title=fields["title"],
+            )
+            target_status = searched.status.value
+            target_reason = searched.reason
+            if searched.status == TargetSearchStatus.RESOLVED:
+                application_url = searched.application_url
         return RawJobPosting(source=self.source_name, url=url,
-                             application_url=target.application_url,
+                             application_url=application_url,
                              company=fields["company"], title=fields["title"],
                              location=fields.get("location"), description=text.strip(),
                              external_job_id=url.rsplit("/", 1)[-1],
@@ -534,8 +557,8 @@ class LinkedInComposioJobSource(JobSource):
                                            if availability is not None
                                            else None
                                        ),
-                                       "application_target_status": target.status.value,
-                                       "application_target_reason": target.reason})
+                                       "application_target_status": target_status,
+                                       "application_target_reason": target_reason})
 
     @staticmethod
     def _explicit_application_targets(page: dict) -> list[object]:

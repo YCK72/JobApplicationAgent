@@ -7,9 +7,9 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1475 passed`
+**Latest verified full regression:** `1480 passed`
 
-**Most recently completed milestone:** **63 — Windows desktop launcher and dashboard discovery**
+**Most recently completed milestone:** **64 — Verified LinkedIn application-target discovery**
 
 **Current development status:** **Desktop-ready safety-first assisted workflow**
 
@@ -20,7 +20,10 @@ result feed and independently verifies that each public job-detail URL still
 retains the same numeric posting identity. Explicit expired redirects and
 closed responses are rejected, and saved pre-application LinkedIn jobs are
 revalidated during later discovery runs so closed listings leave the active
-queue.
+queue. When a fetched LinkedIn page does not expose its outbound Apply URL,
+discovery performs one bounded company-and-title search per posting. It accepts
+only one exact evidence match whose URL passes the existing supported-ATS
+validator; mismatched and ambiguous results remain in review.
 
 ## Safety Invariants
 
@@ -115,10 +118,13 @@ The controlled application workflow **does not submit**.
 ## Application Target Resolution
 
 Discovery keeps the original listing URL for traceability and stores a
-separate application URL for execution. The resolver does not scrape URLs from
-free text, guess targets, follow redirects, or accept lookalike hosts. It
-canonicalizes explicit HTTPS targets by removing query parameters and
-fragments.
+separate application URL for execution. Explicit page targets are preferred.
+When LinkedIn omits that target, the secondary resolver queries for the exact
+company and title and requires both complete normalized values in visible
+search-result evidence. It accepts exactly one URL that also passes the strict
+supported-ATS validator. It does not parse generated search answers, scrape
+URLs from job-description text, follow redirects, or accept lookalike hosts.
+Validated targets are canonicalized by removing query parameters and fragments.
 
 Greenhouse, Lever, Ashby, and Workday are the enabled production ATS targets.
 Ashby targets must use the explicit application path. Workday targets must use

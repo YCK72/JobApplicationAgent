@@ -14,6 +14,10 @@ from app.discovery.composio import (
     SearchClient,
 )
 from app.discovery.runner import DiscoveryRunResult, DiscoveryRunner
+from app.discovery.target_search import (
+    ApplicationTargetSearchResolver,
+    TargetSearchClient,
+)
 from app.jobs.composition import build_job_pipeline
 from app.jobs.models import ApplicationStatus
 from app.tracking.database import JobDatabase
@@ -143,15 +147,20 @@ def build_persistent_discovery_runner(
     export_path: Path | str = DEFAULT_EXPORT_PATH,
     client: SearchClient | None = None,
     availability_checker: LinkedInAvailabilityChecker | None = None,
+    target_search_client: TargetSearchClient | None = None,
 ) -> PersistentDiscoveryRunner:
     """Compose the persistent LinkedIn/Composio discovery boundary."""
 
     resolved_client = client
+    resolved_target_search_client = target_search_client
     if resolved_client is None:
+        composio_client = ComposioSearchClient.from_environment()
         resolved_client = LinkedInGuestSearchClient(
-            fetch_client=ComposioSearchClient.from_environment(),
+            fetch_client=composio_client,
             max_results=max_results,
         )
+        if resolved_target_search_client is None:
+            resolved_target_search_client = composio_client
     resolved_availability_checker = (
         availability_checker
         if availability_checker is not None
@@ -162,6 +171,13 @@ def build_persistent_discovery_runner(
         query=query,
         max_results=max_results,
         availability_checker=resolved_availability_checker,
+        application_target_search=(
+            ApplicationTargetSearchResolver(
+                client=resolved_target_search_client,
+            )
+            if resolved_target_search_client is not None
+            else None
+        ),
     )
     database = JobDatabase(Path(database_path))
     pipeline = build_job_pipeline(database=database)

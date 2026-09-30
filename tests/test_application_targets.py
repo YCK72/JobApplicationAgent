@@ -12,6 +12,10 @@ from app.applications.target_resolver import (
 )
 from app.applications.adapters.detector import ATSProvider
 from app.discovery.composio import LinkedInComposioJobSource
+from app.discovery.target_search import (
+    ApplicationTargetSearchResolver,
+    TargetSearchStatus,
+)
 from app.discovery.greenhouse import GreenhouseJobSource
 from app.jobs.models import ApplicationStatus, Job
 from app.jobs.pipeline import PipelineOutcome
@@ -29,7 +33,7 @@ GREENHOUSE_URL = (
 )
 
 
-def composio_source(page_changes=None):
+def composio_source(page_changes=None, *, application_target_search=None):
     page = {"url": LINKEDIN_URL, "title": TITLE, "text": TEXT}
     page.update(page_changes or {})
     client = MagicMock()
@@ -40,7 +44,128 @@ def composio_source(page_changes=None):
     return LinkedInComposioJobSource(
         client=client,
         query="software engineer Seattle",
+        application_target_search=application_target_search,
     )
+
+
+def test_target_search_resolves_one_exact_supported_ats_result() -> None:
+    client = MagicMock()
+    client.search.return_value = {
+        "citations": [
+            {
+                "title": "Entry-Level Software Engineer @ Pariveda",
+                "url": (
+                    "https://jobs.ashbyhq.com/pariveda/"
+                    "cc4fc0be-c414-4aba-a15d-64daa03476a0/application"
+                ),
+            },
+            {
+                "title": "Pariveda hiring Entry-Level Software Engineer",
+                "url": LINKEDIN_URL,
+            },
+        ]
+    }
+
+    result = ApplicationTargetSearchResolver(client=client).resolve(
+        company="Pariveda",
+        title="Entry-Level Software Engineer",
+    )
+
+    assert result.status == TargetSearchStatus.RESOLVED
+    assert result.provider == ATSProvider.ASHBY
+    assert result.application_url == (
+        "https://jobs.ashbyhq.com/pariveda/"
+        "cc4fc0be-c414-4aba-a15d-64daa03476a0/application"
+    )
+    client.search.assert_called_once_with(
+        '"Entry-Level Software Engineer" "Pariveda" apply'
+    )
+
+
+def test_target_search_rejects_result_without_exact_job_evidence() -> None:
+    client = MagicMock()
+    client.search.return_value = {
+        "citations": [
+            {
+                "title": "Senior Software Engineer @ Pariveda",
+                "url": (
+                    "https://jobs.ashbyhq.com/pariveda/"
+                    "different/application"
+                ),
+            }
+        ]
+    }
+
+    result = ApplicationTargetSearchResolver(client=client).resolve(
+        company="Pariveda",
+        title="Entry-Level Software Engineer",
+    )
+
+    assert result.status == TargetSearchStatus.MISSING
+    assert result.application_url is None
+
+
+def test_target_search_fails_closed_on_multiple_exact_targets() -> None:
+    client = MagicMock()
+    client.search.return_value = {
+        "citations": [
+            {
+                "title": "Software Engineer @ Example",
+                "url": "https://jobs.lever.co/example/one/apply",
+            },
+            {
+                "title": "Software Engineer @ Example",
+                "url": "https://boards.greenhouse.io/example/jobs/two",
+            },
+        ]
+    }
+
+    result = ApplicationTargetSearchResolver(client=client).resolve(
+        company="Example",
+        title="Software Engineer",
+    )
+
+    assert result.status == TargetSearchStatus.AMBIGUOUS
+    assert result.application_url is None
+
+
+def test_composio_searches_for_missing_application_target() -> None:
+    target_client = MagicMock()
+    target_client.search.return_value = {
+        "citations": [
+            {
+                "title": "Software Engineer @ Example",
+                "url": GREENHOUSE_URL,
+            }
+        ]
+    }
+    source = composio_source(
+        application_target_search=ApplicationTargetSearchResolver(
+            client=target_client
+        )
+    )
+
+    raw = source.discover()[0]
+
+    assert raw.application_url == (
+        "https://job-boards.greenhouse.io/example/jobs/123"
+    )
+    assert raw.metadata["application_target_status"] == "RESOLVED"
+
+
+def test_composio_does_not_search_when_page_has_explicit_target() -> None:
+    target_client = MagicMock()
+    source = composio_source(
+        {"application_url": GREENHOUSE_URL},
+        application_target_search=ApplicationTargetSearchResolver(
+            client=target_client
+        ),
+    )
+
+    raw = source.discover()[0]
+
+    assert raw.application_url is not None
+    target_client.search.assert_not_called()
 
 
 def test_resolver_canonicalizes_explicit_greenhouse_target() -> None:
