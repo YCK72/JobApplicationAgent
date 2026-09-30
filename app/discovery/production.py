@@ -9,6 +9,7 @@ from app.discovery.composio import (
     LinkedInAvailabilityChecker,
     LinkedInAvailabilityStatus,
     LinkedInComposioJobSource,
+    LinkedInGuestSearchClient,
     LinkedInPublicAvailabilityChecker,
     SearchClient,
 )
@@ -145,11 +146,12 @@ def build_persistent_discovery_runner(
 ) -> PersistentDiscoveryRunner:
     """Compose the persistent LinkedIn/Composio discovery boundary."""
 
-    resolved_client = (
-        client
-        if client is not None
-        else ComposioSearchClient.from_environment()
-    )
+    resolved_client = client
+    if resolved_client is None:
+        resolved_client = LinkedInGuestSearchClient(
+            fetch_client=ComposioSearchClient.from_environment(),
+            max_results=max_results,
+        )
     resolved_availability_checker = (
         availability_checker
         if availability_checker is not None

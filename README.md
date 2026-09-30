@@ -7,7 +7,7 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1471 passed`
+**Latest verified full regression:** `1475 passed`
 
 **Most recently completed milestone:** **63 — Windows desktop launcher and dashboard discovery**
 
@@ -15,7 +15,8 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
-LinkedIn discovery independently verifies that each public job-detail URL still
+LinkedIn discovery reads current posting identities from LinkedIn's live public
+result feed and independently verifies that each public job-detail URL still
 retains the same numeric posting identity. Explicit expired redirects and
 closed responses are rejected, and saved pre-application LinkedIn jobs are
 revalidated during later discovery runs so closed listings leave the active
@@ -369,7 +370,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1471 passed
+1475 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.

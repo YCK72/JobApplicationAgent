@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 import html
@@ -10,8 +11,10 @@ import os
 import re
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+from bs4 import BeautifulSoup
 
 from app.discovery.base import JobSource, RawJobPosting
 from app.applications.target_resolver import ApplicationTargetResolver
@@ -203,6 +206,178 @@ class ComposioSearchClient:
         return payload["data"]
 
 
+class LinkedInGuestSearchClient:
+    """Read live public LinkedIn result cards, then delegate page fetches."""
+
+    BASE_URL = (
+        "https://www.linkedin.com/jobs-guest/jobs/api/"
+        "seeMoreJobPostings/search"
+    )
+    MAX_RESPONSE_BYTES = 1_000_000
+
+    def __init__(
+        self,
+        *,
+        fetch_client: SearchClient,
+        max_results: int = 5,
+        timeout_seconds: float = 20,
+        default_location: str = "United States",
+        opener=None,
+    ) -> None:
+        if type(max_results) is not int or not 1 <= max_results <= 20:
+            raise ValueError("max_results must be an integer between 1 and 20")
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be finite and positive")
+        if not isinstance(default_location, str) or not default_location.strip():
+            raise ValueError("default_location must not be empty")
+        self._fetch_client = fetch_client
+        self._max_results = max_results
+        self._timeout = timeout_seconds
+        self._default_location = default_location.strip()
+        self._opener = opener if opener is not None else build_opener()
+        self._dates: dict[str, str] = {}
+
+    def search(self, query: str) -> dict[str, Any]:
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("query must not be empty")
+        keywords, location, recency = self._criteria(query)
+        selected: dict[str, dict[str, str]] = {}
+        self._dates = {}
+        for start in range(0, self._max_results, 10):
+            parameters = {
+                "keywords": keywords,
+                "location": location,
+                "start": str(start),
+            }
+            if recency is not None:
+                parameters["f_TPR"] = recency
+            request = Request(
+                f"{self.BASE_URL}?{urlencode(parameters)}",
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "text/html,application/xhtml+xml",
+                },
+            )
+            try:
+                with self._opener.open(request, timeout=self._timeout) as response:
+                    body = response.read(self.MAX_RESPONSE_BYTES + 1)
+            except (HTTPError, URLError, TimeoutError, OSError):
+                raise ComposioDiscoveryError(
+                    "LinkedIn public job search failed or timed out."
+                ) from None
+            if len(body) > self.MAX_RESPONSE_BYTES:
+                raise ComposioDiscoveryError(
+                    "LinkedIn public job search response exceeded the size limit."
+                )
+            self._collect_cards(body, selected)
+            if len(selected) >= self._max_results:
+                break
+        return {"citations": list(selected.values())[:self._max_results]}
+
+    def fetch(self, urls: list[str]) -> dict[str, Any]:
+        payload = deepcopy(self._fetch_client.fetch(urls))
+        pages = payload.get("results")
+        if isinstance(pages, list):
+            for page in pages:
+                if not isinstance(page, dict):
+                    continue
+                canonical = canonical_linkedin_job_url(
+                    page.get("url") or page.get("id")
+                )
+                if canonical in self._dates:
+                    page["date_posted"] = self._dates[canonical]
+        return payload
+
+    def _collect_cards(
+        self,
+        body: bytes,
+        selected: dict[str, dict[str, str]],
+    ) -> None:
+        soup = BeautifulSoup(
+            body.decode("utf-8", errors="replace"),
+            "html.parser",
+        )
+        for card in soup.select("[data-entity-urn]"):
+            link = card.select_one("a.base-card__full-link[href]")
+            canonical = canonical_linkedin_job_url(
+                link.get("href") if link is not None else None
+            )
+            if canonical is None or canonical in selected:
+                continue
+            title_element = card.select_one(".base-search-card__title")
+            title = (
+                title_element.get_text(" ", strip=True)
+                if title_element is not None
+                else "LinkedIn job posting"
+            )
+            selected[canonical] = {"url": canonical, "title": title}
+            time_element = card.select_one("time[datetime]")
+            date_posted = (
+                time_element.get("datetime")
+                if time_element is not None
+                else None
+            )
+            if isinstance(date_posted, str) and re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}",
+                date_posted,
+            ):
+                self._dates[canonical] = date_posted
+            if len(selected) >= self._max_results:
+                return
+
+    def _criteria(self, query: str) -> tuple[str, str, str | None]:
+        value = re.sub(
+            r"^site:linkedin\.com/jobs/view\s+",
+            "",
+            query.strip(),
+            flags=re.IGNORECASE,
+        )
+        recency = None
+        recency_patterns = (
+            (
+                r"\b(?:posted\s+)?(?:in\s+)?(?:the\s+)?"
+                r"(?:past|last)\s+24\s+hours?\b",
+                "r86400",
+            ),
+            (r"\b(?:posted\s+)?today\b", "r86400"),
+            (
+                r"\b(?:posted\s+)?(?:in\s+)?(?:the\s+)?"
+                r"(?:past|last)\s+week\b",
+                "r604800",
+            ),
+        )
+        for pattern, value_code in recency_patterns:
+            updated, count = re.subn(
+                pattern,
+                " ",
+                value,
+                flags=re.IGNORECASE,
+            )
+            if count:
+                value = updated
+                recency = value_code
+                break
+        location = self._default_location
+        location_match = re.search(
+            r"\s+(?:in|near)\s+([^,;]+(?:,\s*[^,;]+)?)\s*$",
+            value,
+            re.IGNORECASE,
+        )
+        if location_match is not None:
+            location = location_match.group(1).strip()
+            value = value[:location_match.start()]
+        keywords = re.sub(
+            r"\bentry[-\s]level\b",
+            "entry level",
+            value,
+            flags=re.IGNORECASE,
+        )
+        keywords = " ".join(keywords.strip(" ,;-").split())
+        if not keywords:
+            raise ValueError("query must include job keywords")
+        return keywords, location, recency
+
+
 def canonical_linkedin_job_url(value: Any) -> str | None:
     """Keep a numeric posting identity, never search/profile or lookalike URLs."""
     if not isinstance(value, str) or any(c.isspace() for c in value):
@@ -264,7 +439,7 @@ class LinkedInComposioJobSource(JobSource):
 
     def discover(self) -> list[RawJobPosting]:
         self.last_candidate_count = self.last_skipped_count = 0
-        data = _results(self.client.search("site:linkedin.com/jobs/view " + self.query))
+        data = _results(self.client.search(self.query))
         citations = data.get("citations")
         if citations in (None, []) and "organic_results" in data:
             citations = data["organic_results"]
@@ -338,7 +513,19 @@ class LinkedInComposioJobSource(JobSource):
                              company=fields["company"], title=fields["title"],
                              location=fields.get("location"), description=text.strip(),
                              external_job_id=url.rsplit("/", 1)[-1],
-                             metadata={"discovery_provider": "composio_search",
+                             date_posted=(
+                                 page.get("date_posted")
+                                 if isinstance(page.get("date_posted"), str)
+                                 and re.fullmatch(
+                                     r"[0-9]{4}-[0-9]{2}-[0-9]{2}",
+                                     page["date_posted"],
+                                 )
+                                 else None
+                             ),
+                             metadata={
+                                       "discovery_provider": (
+                                           "linkedin_public_search_composio_fetch"
+                                       ),
                                        "content_kind": "extracted_page_text",
                                        "tool_version": ComposioSearchClient.TOOL_VERSION,
                                        "freshness_verified": availability is not None,

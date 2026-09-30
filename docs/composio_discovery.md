@@ -1,6 +1,8 @@
 # Composio / LinkedIn discovery
 
 `LinkedInComposioJobSource` implements the existing `JobSource` interface. It
+uses LinkedIn's live public result feed for current posting identities and
+dates, then uses the bounded Composio fetch tool for job-page content. It
 returns `RawJobPosting` objects and normalizes them into `Job`; use it with
 `DiscoveryRunner` alongside `GreenhouseJobSource`. The existing pipeline owns
 classification, eligibility, scoring, deduplication, routing and persistence.
@@ -67,14 +69,17 @@ output setup failed.
 
 ## Parsing contract and limits
 
-- One `COMPOSIO_SEARCH_WEB` query and at most one
+- One or two bounded LinkedIn public result requests and at most one
   `COMPOSIO_SEARCH_FETCH_URL_CONTENT` batch per run; default five pages in the
   adapter, three in the smoke runner, hard maximum twenty.
 - REST API: `https://backend.composio.dev/api/v3/tools/execute/{tool_slug}`.
   Toolkit version is pinned to `20260903_00`. Schema changes require review and
   updated contract tests before changing the pin.
-- Search citations are preferred; organic results are a fallback. Generated
-  search answers and summaries are never parsed as job facts.
+- Natural-language phrases for `past 24 hours`, `today`, `past week`, and a
+  trailing `in` or `near` location become explicit public-search parameters.
+  Queries without a location default to the United States. Result cards supply
+  only public job IDs, titles, and ISO posting dates; generated search answers
+  and summaries are never parsed as job facts.
 - Only HTTP/S LinkedIn `/jobs/view/` pages with numeric posting IDs are accepted.
   Tracking parameters and slug variations share the same canonical ID/URL.
 - Title parsing supports `Company hiring Role in Location | LinkedIn` and
@@ -95,10 +100,10 @@ output setup failed.
   the active review queue when Excel refreshes. Applied and in-progress review
   sessions are never changed by this maintenance pass.
 - Description is extracted page text, not a generated summary. It may contain
-  page boilerplate and is capped at 20,000 characters. Relative dates are not
-  guessed; posting date stays unset. Search coverage is not guaranteed, and a
-  fetched page may be cached, so the independent public identity check is the
-  final availability gate.
+  page boilerplate and is capped at 20,000 characters. Posting dates come only
+  from ISO dates on live result cards; relative date labels are not guessed.
+  Search coverage is not guaranteed, and fetched page content may be cached,
+  so the independent public identity check remains the final availability gate.
 - HTTP failures, schema errors and timeouts raise `ComposioDiscoveryError`.
   No automatic retries, broad searches, pagination or account fallback occur.
   Re-run intentionally after resolving rate limits or credentials.

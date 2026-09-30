@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 from app.discovery.composio import (
     ComposioSearchClient, LinkedInComposioJobSource,
+    LinkedInGuestSearchClient,
     LinkedInPublicAvailabilityChecker,
 )
 from app.discovery.runner import DiscoveryRunner
@@ -31,7 +32,10 @@ def main() -> int:
     load_dotenv(PROJECT_ROOT / ".env", override=False)
     try:
         source = LinkedInComposioJobSource(
-            client=ComposioSearchClient.from_environment(),
+            client=LinkedInGuestSearchClient(
+                fetch_client=ComposioSearchClient.from_environment(),
+                max_results=args.limit,
+            ),
             query=args.query, max_results=args.limit,
             availability_checker=LinkedInPublicAvailabilityChecker(),
         )

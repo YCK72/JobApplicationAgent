@@ -1,13 +1,15 @@
 import json
 from unittest.mock import MagicMock
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from app.discovery.composio import (
     ComposioDiscoveryError, ComposioSearchClient,
     LinkedInAvailabilityResult, LinkedInAvailabilityStatus,
-    LinkedInComposioJobSource, LinkedInPublicAvailabilityChecker,
+    LinkedInComposioJobSource, LinkedInGuestSearchClient,
+    LinkedInPublicAvailabilityChecker,
     canonical_linkedin_job_url,
 )
 from app.discovery.runner import DiscoveryRunner
@@ -45,7 +47,7 @@ def test_discovery_and_normalization_preserve_source_data():
     assert job.status == ApplicationStatus.DISCOVERED
     assert job.resume_used is None
     assert job.source == "linkedin_composio"
-    client.search.assert_called_once_with("site:linkedin.com/jobs/view software engineer Seattle")
+    client.search.assert_called_once_with("software engineer Seattle")
     client.fetch.assert_called_once_with([URL])
 
 
@@ -210,6 +212,82 @@ class Response:
         return self.body
 
 
+class HtmlResponse(Response):
+    def __init__(self, body: str):
+        self.body = body.encode("utf-8")
+
+
+def test_guest_search_maps_natural_language_to_live_linkedin_filters():
+    opener = MagicMock()
+    opener.open.return_value = HtmlResponse("""
+        <li><div class="base-card" data-entity-urn="urn:li:jobPosting:4471599480">
+          <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/full-stack-engineer-entry-level-at-example-4471599480?trackingId=x"></a>
+          <h3 class="base-search-card__title">Full Stack Software Engineer - Entry Level</h3>
+          <span class="job-search-card__location">Seattle, WA</span>
+          <time datetime="2026-09-29">1 hour ago</time>
+        </div></li>
+    """)
+    fetch_client = MagicMock()
+    fetch_client.fetch.return_value = {"results": [{"url": "https://www.linkedin.com/jobs/view/4471599480"}]}
+    client = LinkedInGuestSearchClient(
+        fetch_client=fetch_client,
+        max_results=10,
+        opener=opener,
+    )
+
+    result = client.search(
+        "entry-level Software Engineer in Seattle posted in the past 24 hours"
+    )
+
+    assert result["citations"] == [{
+        "url": "https://www.linkedin.com/jobs/view/4471599480",
+        "title": "Full Stack Software Engineer - Entry Level",
+    }]
+    request = opener.open.call_args.args[0]
+    query = parse_qs(urlsplit(request.full_url).query)
+    assert query["keywords"] == ["entry level Software Engineer"]
+    assert query["location"] == ["Seattle"]
+    assert query["f_TPR"] == ["r86400"]
+    assert query["start"] == ["0"]
+
+    fetched = client.fetch(["https://www.linkedin.com/jobs/view/4471599480"])
+    assert fetched["results"][0]["date_posted"] == "2026-09-29"
+
+
+def test_guest_search_defaults_to_united_states_and_deduplicates_ids():
+    opener = MagicMock()
+    opener.open.return_value = HtmlResponse("""
+        <div data-entity-urn="urn:li:jobPosting:4471599480">
+          <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/a-4471599480"></a>
+        </div>
+        <div data-entity-urn="urn:li:jobPosting:4471599480">
+          <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/b-4471599480"></a>
+        </div>
+    """)
+    client = LinkedInGuestSearchClient(
+        fetch_client=MagicMock(), max_results=3, opener=opener
+    )
+
+    result = client.search("entry level software engineer past 24 hours")
+
+    assert len(result["citations"]) == 1
+    query = parse_qs(urlsplit(opener.open.call_args.args[0].full_url).query)
+    assert query["location"] == ["United States"]
+
+
+def test_guest_search_transport_failure_is_visible_and_sanitized():
+    opener = MagicMock()
+    opener.open.side_effect = URLError("SECRET")
+    client = LinkedInGuestSearchClient(
+        fetch_client=MagicMock(), max_results=3, opener=opener
+    )
+
+    with pytest.raises(ComposioDiscoveryError) as error:
+        client.search("software engineer")
+
+    assert "SECRET" not in str(error.value)
+
+
 def test_rest_request_pins_version_and_uses_project_key():
     opener = MagicMock()
     opener.open.return_value = Response({"successful": True, "data": {"citations": []}})
@@ -259,6 +337,16 @@ def test_missing_key_is_actionable(monkeypatch):
 def test_missing_location_remains_missing():
     client = client_with_page(title="Example hiring Software Engineer | LinkedIn")
     assert source(client).discover()[0].location is None
+
+
+def test_live_search_date_is_preserved_during_normalization():
+    client = client_with_page(date_posted="2026-09-29")
+
+    raw = source(client).discover()[0]
+    job = source(client).normalize(raw)
+
+    assert raw.date_posted == "2026-09-29"
+    assert str(job.date_posted) == "2026-09-29"
 
 
 def test_organic_results_fallback():
