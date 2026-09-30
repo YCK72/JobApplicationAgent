@@ -18,6 +18,11 @@ from app.dashboard.application_preview import (
     ApplicationPreviewStatus,
 )
 from app.jobs.models import ApplicationStatus
+from app.applications.submission_confirmation import (
+    SubmissionConfirmation,
+    SubmissionConfirmationOutcome,
+    SubmissionConfirmationService,
+)
 from app.dashboard.review_sessions import (
     ApplicationReviewSessionManager,
     ReviewSessionSnapshot,
@@ -25,6 +30,9 @@ from app.dashboard.review_sessions import (
 
 
 EXTERNAL_BROWSER_CONFIRMATION = "AUTHORIZE_EXTERNAL_BROWSER"
+AUTOMATIC_SUBMISSION_CONFIRMATION = (
+    "AUTHORIZE_EXTERNAL_BROWSER_AND_AUTOMATIC_SUBMISSION"
+)
 
 
 class ApplicationLaunchStatus(str, Enum):
@@ -36,6 +44,8 @@ class ApplicationLaunchStatus(str, Enum):
     NOT_FOUND = "NOT_FOUND"
     NOT_ELIGIBLE = "NOT_ELIGIBLE"
     READY_FOR_REVIEW = "READY_FOR_REVIEW"
+    APPLIED = "APPLIED"
+    SUBMISSION_UNCONFIRMED = "SUBMISSION_UNCONFIRMED"
     NEEDS_REVIEW = "NEEDS_REVIEW"
     BLOCKED = "BLOCKED"
     FAILED = "FAILED"
@@ -85,6 +95,9 @@ class DashboardApplicationLaunchService:
             lambda: secrets.token_urlsafe(32)
         ),
         review_session_manager: ApplicationReviewSessionManager | None = None,
+        submission_confirmation_service: (
+            SubmissionConfirmationService | None
+        ) = None,
     ) -> None:
         if authorization_ttl_seconds <= 0:
             raise ValueError("authorization_ttl_seconds must be positive")
@@ -94,6 +107,11 @@ class DashboardApplicationLaunchService:
         self._clock = clock
         self._token_factory = token_factory
         self.review_session_manager = review_session_manager
+        self.submission_confirmation_service = (
+            submission_confirmation_service
+            if submission_confirmation_service is not None
+            else SubmissionConfirmationService(launcher.database)
+        )
         self._grants: dict[str, _AuthorizationGrant] = {}
         self._lock = Lock()
 
@@ -137,8 +155,14 @@ class DashboardApplicationLaunchService:
         authorization_token: object,
         confirmation: object,
     ) -> ApplicationLaunchResult:
+        automatic_submission = (
+            confirmation == AUTOMATIC_SUBMISSION_CONFIRMATION
+        )
         if (
-            confirmation != EXTERNAL_BROWSER_CONFIRMATION
+            confirmation not in {
+                EXTERNAL_BROWSER_CONFIRMATION,
+                AUTOMATIC_SUBMISSION_CONFIRMATION,
+            }
             or not isinstance(authorization_token, str)
             or not authorization_token
         ):
@@ -218,6 +242,11 @@ class DashboardApplicationLaunchService:
                     ),
                     export_path=launch_result.export_path,
                 )
+            if automatic_submission:
+                return self._submit_and_record(
+                    job_id=job_id,
+                    launch_result=launch_result,
+                )
             return self._from_launch_result(
                 launch_result,
                 review_session=sessions.snapshot(job_id),
@@ -225,6 +254,65 @@ class DashboardApplicationLaunchService:
 
         sessions.release(job_id)
         return self._from_launch_result(launch_result)
+
+    def _submit_and_record(
+        self,
+        *,
+        job_id: int,
+        launch_result: SingleJobLaunchResult,
+    ) -> ApplicationLaunchResult:
+        sessions = self.review_session_manager
+        if sessions is None or launch_result.job is None:
+            return ApplicationLaunchResult(
+                status=ApplicationLaunchStatus.BLOCKED,
+                reason="Automatic submission requires an active browser session.",
+                job_id=job_id,
+                completed_actions=launch_result.completed_actions,
+            )
+        try:
+            browser_result = sessions.submit_application(job_id)
+            confirmation_result = self.submission_confirmation_service.record(
+                job=launch_result.job,
+                job_id=job_id,
+                confirmation=SubmissionConfirmation(
+                    submitted=browser_result.submitted,
+                    success_confirmed=browser_result.success_confirmed,
+                    evidence=browser_result.evidence,
+                ),
+            )
+        except Exception as exc:
+            return ApplicationLaunchResult(
+                status=ApplicationLaunchStatus.FAILED,
+                reason=f"Automatic submission failed unexpectedly: {exc}",
+                job_id=job_id,
+                completed_actions=launch_result.completed_actions,
+            )
+        finally:
+            sessions.close(job_id)
+
+        try:
+            export_path = self.launcher.tracker.generate()
+        except Exception:
+            export_path = launch_result.export_path
+
+        if confirmation_result.outcome == SubmissionConfirmationOutcome.CONFIRMED:
+            status = ApplicationLaunchStatus.APPLIED
+        elif confirmation_result.outcome == SubmissionConfirmationOutcome.UNCONFIRMED:
+            status = ApplicationLaunchStatus.SUBMISSION_UNCONFIRMED
+        elif confirmation_result.outcome == SubmissionConfirmationOutcome.NOT_SUBMITTED:
+            status = ApplicationLaunchStatus.BLOCKED
+        elif confirmation_result.outcome == SubmissionConfirmationOutcome.BLOCKED:
+            status = ApplicationLaunchStatus.BLOCKED
+        else:
+            status = ApplicationLaunchStatus.FAILED
+        return ApplicationLaunchResult(
+            status=status,
+            reason=confirmation_result.reason,
+            job_id=job_id,
+            completed_actions=launch_result.completed_actions,
+            application_status=confirmation_result.job.status,
+            export_path=export_path,
+        )
 
     def current_review_session(
         self,

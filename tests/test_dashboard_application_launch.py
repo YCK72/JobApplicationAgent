@@ -8,7 +8,11 @@ from app.applications.single_job import (
     SingleJobLaunchResult,
     SingleJobLaunchStatus,
 )
+from app.applications.submission_confirmation import (
+    SubmissionConfirmationOutcome,
+)
 from app.dashboard.application_launch import (
+    AUTOMATIC_SUBMISSION_CONFIRMATION,
     ApplicationLaunchStatus,
     DashboardApplicationLaunchService,
 )
@@ -134,6 +138,42 @@ def test_exact_fresh_authorization_launches_only_that_job() -> None:
     launcher.run.assert_called_once_with(job_id=7, allow_external=True)
 
 
+def test_automatic_submission_confirmation_submits_and_records_applied() -> None:
+    sessions = MagicMock()
+    sessions.reserve.return_value = True
+    sessions.claim.return_value = True
+    sessions.snapshot.return_value = None
+    submission = MagicMock()
+    submission.submitted = True
+    submission.success_confirmed = True
+    submission.evidence = "Application submitted confirmation displayed."
+    sessions.submit_application.return_value = submission
+    confirmation_service = MagicMock()
+    confirmation_result = MagicMock()
+    confirmation_result.confirmed = True
+    confirmation_result.outcome = SubmissionConfirmationOutcome.CONFIRMED
+    confirmation_result.job = ready_preview().job.model_copy(
+        update={"status": ApplicationStatus.APPLIED}
+    )
+    confirmation_result.reason = "Confirmed and recorded."
+    confirmation_service.record.return_value = confirmation_result
+    service, _, launcher, _ = make_service(review_sessions=sessions)
+    service.submission_confirmation_service = confirmation_service
+    token = service.prepare(7).authorization_token
+
+    result = service.launch(
+        job_id=7,
+        authorization_token=token,
+        confirmation=AUTOMATIC_SUBMISSION_CONFIRMATION,
+    )
+
+    assert result.status == ApplicationLaunchStatus.APPLIED
+    sessions.submit_application.assert_called_once_with(7)
+    sessions.close.assert_called_once_with(7)
+    confirmation_service.record.assert_called_once()
+    launcher.run.assert_called_once_with(job_id=7, allow_external=True)
+
+
 def test_wrong_job_or_confirmation_never_reaches_launcher() -> None:
     service, _, launcher, _ = make_service()
     token = service.prepare(7).authorization_token
@@ -210,12 +250,12 @@ def test_authorization_token_is_single_use() -> None:
     launcher.run.assert_called_once_with(job_id=7, allow_external=True)
 
 
-def test_dashboard_launch_service_exposes_no_submission_capability() -> None:
+def test_dashboard_launch_service_exposes_no_direct_submit_method() -> None:
     service, _, _, _ = make_service()
 
     assert not hasattr(service, "submit")
     assert not hasattr(service, "confirm_submission")
-    assert not hasattr(service, "submission_confirmation_service")
+    assert hasattr(service, "submission_confirmation_service")
 
 
 def test_successful_launch_claims_retained_review_session() -> None:

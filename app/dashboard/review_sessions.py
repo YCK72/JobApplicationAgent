@@ -10,6 +10,7 @@ import time
 from app.applications.browser_form_executor import BrowserFormExecutor
 from app.browser import BrowserSession
 from app.browser.playwright_form_writer import PlaywrightFieldWriter
+from app.applications.submission_executor import BrowserSubmissionExecutor
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,9 @@ class _ExecutorProxy:
             plan,
             target_authorization=target_authorization,
         )
+
+    def submit_application(self):
+        return self._session.submit_application()
 
 
 class RetainedApplicationExecutionSession:
@@ -54,6 +58,7 @@ class RetainedApplicationExecutionSession:
         self._closed = Event()
         self._startup_error: Exception | None = None
         self._last_execution_succeeded = False
+        self._submission_attempted = False
         self._expires_at: float | None = None
         self._thread = Thread(
             target=self._run,
@@ -75,7 +80,11 @@ class RetainedApplicationExecutionSession:
         return _ExecutorProxy(self)
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
-        if exc_type is not None or not self._last_execution_succeeded:
+        if (
+            exc_type is not None
+            or not self._last_execution_succeeded
+            or self._submission_attempted
+        ):
             self.close()
             return
         response: Queue = Queue(maxsize=1)
@@ -95,6 +104,15 @@ class RetainedApplicationExecutionSession:
         if isinstance(outcome, Exception):
             raise outcome
         self._last_execution_succeeded = bool(outcome.succeeded)
+        return outcome
+
+    def submit_application(self):
+        response: Queue = Queue(maxsize=1)
+        self._commands.put(("submit", None, response))
+        outcome = response.get(timeout=45)
+        if isinstance(outcome, Exception):
+            raise outcome
+        self._submission_attempted = True
         return outcome
 
     def close(self) -> None:
@@ -118,8 +136,9 @@ class RetainedApplicationExecutionSession:
             entered = True
             page = opened_session.navigate(self.target_url)
             executor = self._executor_factory(page)
+            submission_executor = BrowserSubmissionExecutor(page)
             self._ready.set()
-            self._command_loop(executor)
+            self._command_loop(executor, submission_executor)
         except Exception as exc:
             if not self._ready.is_set():
                 self._startup_error = exc
@@ -133,7 +152,11 @@ class RetainedApplicationExecutionSession:
             self._closed.set()
             self._on_closed(self)
 
-    def _command_loop(self, executor: BrowserFormExecutor) -> None:
+    def _command_loop(
+        self,
+        executor: BrowserFormExecutor,
+        submission_executor: BrowserSubmissionExecutor,
+    ) -> None:
         while True:
             timeout = None
             if self._expires_at is not None:
@@ -163,6 +186,16 @@ class RetainedApplicationExecutionSession:
                     result = executor.execute(
                         plan,
                         target_authorization=target_authorization,
+                    )
+                except Exception as exc:
+                    response.put(exc)
+                else:
+                    response.put(result)
+                continue
+            if command == "submit" and response is not None:
+                try:
+                    result = submission_executor.submit(
+                        target_url=self.target_url,
                     )
                 except Exception as exc:
                     response.put(exc)
@@ -276,6 +309,13 @@ class ApplicationReviewSessionManager:
             return False
         session.close()
         return True
+
+    def submit_application(self, job_id: int):
+        with self._lock:
+            session = self._active.get(job_id)
+        if session is None or not session.active:
+            raise RuntimeError("No active browser session exists for this job.")
+        return session.submit_application()
 
     def close_all(self) -> None:
         with self._lock:

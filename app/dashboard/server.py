@@ -31,6 +31,7 @@ from app.dashboard.application_preview import (
     ApplicationPreviewStatus,
 )
 from app.dashboard.application_launch import (
+    AUTOMATIC_SUBMISSION_CONFIRMATION,
     ApplicationLaunchStatus,
     DashboardApplicationLaunchService,
     EXTERNAL_BROWSER_CONFIRMATION,
@@ -505,7 +506,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if (
             not isinstance(token, str)
             or not token
-            or confirmation != EXTERNAL_BROWSER_CONFIRMATION
+            or confirmation not in {
+                EXTERNAL_BROWSER_CONFIRMATION,
+                AUTOMATIC_SUBMISSION_CONFIRMATION,
+            }
         ):
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
@@ -535,6 +539,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         status_code = {
             ApplicationLaunchStatus.READY_FOR_REVIEW: HTTPStatus.OK,
+            ApplicationLaunchStatus.APPLIED: HTTPStatus.OK,
+            ApplicationLaunchStatus.SUBMISSION_UNCONFIRMED: HTTPStatus.OK,
             ApplicationLaunchStatus.AUTHORIZATION_DENIED: HTTPStatus.FORBIDDEN,
             ApplicationLaunchStatus.AUTHORIZATION_EXPIRED: HTTPStatus.FORBIDDEN,
             ApplicationLaunchStatus.PREVIEW_STALE: HTTPStatus.CONFLICT,

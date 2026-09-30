@@ -50,10 +50,6 @@ const elements = {
   jobSearchLimit: document.querySelector("#job-search-limit"),
   jobSearchButton: document.querySelector("#job-search-button"),
   jobSearchResult: document.querySelector("#job-search-result"),
-  autoPrepareConsent: document.querySelector("#auto-prepare-consent"),
-  batchControls: document.querySelector("#batch-controls"),
-  batchConsent: document.querySelector("#batch-consent"),
-  batchPrepare: document.querySelector("#batch-prepare"),
 };
 
 const metricDefinitions = [
@@ -800,13 +796,10 @@ function showSearchResult(message, isError = false) {
 async function searchJobs(event) {
   event.preventDefault();
   if (state.searching) return;
-  const autoPrepareAuthorized = elements.autoPrepareConsent.checked;
   state.searching = true;
   state.discovery = null;
   elements.jobSearchButton.disabled = true;
   elements.jobSearchButton.textContent = "Searching and verifying…";
-  elements.batchControls.hidden = true;
-  elements.batchConsent.checked = autoPrepareAuthorized;
   showSearchResult("Searching current postings and checking whether they still accept applications…");
   try {
     const response = await fetch("/api/job-search", {
@@ -823,10 +816,9 @@ async function searchJobs(event) {
     const eligible = Array.isArray(payload.eligible_job_ids) ? payload.eligible_job_ids.length : 0;
     const warnings = Array.isArray(payload.errors) ? payload.errors.length : 0;
     showSearchResult(`${payload.processed} current postings processed; ${eligible} eligible for automatic preparation; ${payload.expired_jobs} closed saved postings removed; ${warnings} search warnings.`);
-    elements.batchControls.hidden = eligible === 0;
     await refresh();
-    if (eligible > 0 && autoPrepareAuthorized) {
-      await prepareEligibleApplications();
+    if (eligible > 0) {
+      await submitEligibleApplications();
     }
   } catch (error) {
     showSearchResult(error instanceof Error ? error.message : "Job search failed.", true);
@@ -837,18 +829,17 @@ async function searchJobs(event) {
   }
 }
 
-async function prepareEligibleApplications() {
-  if (state.batchPreparing || !elements.batchConsent.checked) return;
+async function submitEligibleApplications() {
+  if (state.batchPreparing) return;
   const jobIds = state.discovery?.eligible_job_ids;
   if (!Array.isArray(jobIds) || jobIds.length === 0) return;
   state.batchPreparing = true;
-  elements.batchPrepare.disabled = true;
-  elements.batchConsent.disabled = true;
-  let prepared = 0;
+  let applied = 0;
+  let unconfirmed = 0;
   const stopped = [];
   for (let index = 0; index < jobIds.length; index += 1) {
     const jobId = jobIds[index];
-    elements.batchPrepare.textContent = `Preparing ${index + 1} of ${jobIds.length}…`;
+    showSearchResult(`Automatically applying ${index + 1} of ${jobIds.length}…`);
     try {
       const previewResponse = await fetch(`/api/jobs/${jobId}/application-preview`, { cache: "no-store" });
       const preview = await previewResponse.json();
@@ -860,23 +851,21 @@ async function prepareEligibleApplications() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           authorization_token: preview.authorization.token,
-          confirmation: "AUTHORIZE_EXTERNAL_BROWSER",
+          confirmation: "AUTHORIZE_EXTERNAL_BROWSER_AND_AUTOMATIC_SUBMISSION",
         }),
       });
       const launch = await launchResponse.json();
       if (!launchResponse.ok) throw new Error(launch.reason || launch.error || "Application preparation stopped.");
-      prepared += 1;
+      if (launch.status === "APPLIED") applied += 1;
+      else if (launch.status === "SUBMISSION_UNCONFIRMED") unconfirmed += 1;
+      else stopped.push(`${jobId}: ${launch.reason || "needs review"}`);
     } catch (error) {
       stopped.push(`${jobId}: ${error instanceof Error ? error.message : "needs review"}`);
     }
   }
-  const suffix = stopped.length ? ` ${stopped.length} moved or remained in review.` : "";
-  showSearchResult(`${prepared} applications were filled and left open for your review.${suffix} No application was submitted.`, stopped.length > 0);
+  const suffix = stopped.length ? ` ${stopped.length} skipped or moved to review.` : "";
+  showSearchResult(`${applied} applications submitted and confirmed; ${unconfirmed} submissions attempted but unconfirmed.${suffix}`, stopped.length > 0 || unconfirmed > 0);
   state.batchPreparing = false;
-  elements.batchConsent.disabled = false;
-  elements.batchConsent.checked = false;
-  elements.batchPrepare.disabled = true;
-  elements.batchPrepare.textContent = "Prepare eligible applications";
   await refresh();
 }
 
@@ -885,10 +874,6 @@ for (const control of [elements.search, elements.status, elements.category, elem
 }
 elements.refresh.addEventListener("click", refresh);
 elements.jobSearchForm.addEventListener("submit", searchJobs);
-elements.batchConsent.addEventListener("change", () => {
-  elements.batchPrepare.disabled = !elements.batchConsent.checked || state.batchPreparing;
-});
-elements.batchPrepare.addEventListener("click", prepareEligibleApplications);
 elements.historyOutcome.addEventListener("change", renderReviewHistory);
 elements.historyKind.addEventListener("change", renderReviewHistory);
 elements.historyClose.addEventListener("click", () => {
