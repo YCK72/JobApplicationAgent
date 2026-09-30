@@ -33,6 +33,10 @@ from app.applications.adapters.detector import (
             "https://company.wd5.myworkdayjobs.com/jobs/job/123",
             ATSProvider.WORKDAY,
         ),
+        (
+            "https://careers.tiktok.com/resume/7668557209047894325/apply",
+            ATSProvider.TIKTOK,
+        ),
     ],
 )
 def test_known_ats_urls_are_detected(
@@ -66,6 +70,7 @@ def test_unknown_hosts_fail_closed(url):
         "https://boards.greenhouse.io.evil.example/job/123",
         "https://jobs.ashbyhq.com.evil.example/job/123",
         "https://company.wd1.myworkdayjobs.com.evil.example/job/123",
+        "https://careers.tiktok.com.evil.example/resume/123/apply",
     ],
 )
 def test_spoofed_hosts_fail_closed(url):

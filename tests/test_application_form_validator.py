@@ -42,6 +42,17 @@ def test_matching_form_is_valid(
     assert result.valid is True
 
 
+def test_matching_tiktok_form_is_valid(validator):
+    url = "https://careers.tiktok.com/resume/7668557209047894325/apply"
+    result = validator.validate(
+        form=make_form(provider="TikTok", url=url),
+        expected_provider=ATSProvider.TIKTOK,
+        expected_job_url=url,
+    )
+
+    assert result.valid is True
+
+
 def test_provider_name_is_case_insensitive(
     validator,
 ):

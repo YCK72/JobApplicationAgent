@@ -30,6 +30,7 @@ from app.applications.adapters.greenhouse import (
 )
 from app.applications.adapters.lever import LeverFormAdapter
 from app.applications.adapters.workday import WorkdayFormAdapter
+from app.applications.adapters.tiktok import TikTokFormAdapter
 from app.applications.adapters.registry import (
     ApplicationAdapterRegistry,
 )
@@ -129,6 +130,14 @@ def build_application_adapter_registry(
             browser_session=browser_session_factory(),
         )
 
+    def create_tiktok_adapter(
+        job_url: str,
+    ) -> TikTokFormAdapter:
+        return TikTokFormAdapter(
+            job_url=job_url,
+            browser_session=browser_session_factory(),
+        )
+
     return ApplicationAdapterRegistry(
         {
             ATSProvider.GREENHOUSE:
@@ -139,6 +148,8 @@ def build_application_adapter_registry(
                 create_ashby_adapter,
             ATSProvider.WORKDAY:
                 create_workday_adapter,
+            ATSProvider.TIKTOK:
+                create_tiktok_adapter,
         }
     )
 

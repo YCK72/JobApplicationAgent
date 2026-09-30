@@ -32,6 +32,7 @@ from app.applications.adapters.greenhouse import (
 )
 from app.applications.adapters.lever import LeverFormAdapter
 from app.applications.adapters.workday import WorkdayFormAdapter
+from app.applications.adapters.tiktok import TikTokFormAdapter
 from app.applications.browser_form_executor import (
     BrowserFormExecutor,
 )
@@ -115,6 +116,7 @@ def test_registry_build_does_not_create_browser_session() -> None:
     assert registry.has_adapter(ATSProvider.LEVER)
     assert registry.has_adapter(ATSProvider.ASHBY)
     assert registry.has_adapter(ATSProvider.WORKDAY)
+    assert registry.has_adapter(ATSProvider.TIKTOK)
 
     browser_factory.assert_not_called()
 
@@ -166,6 +168,22 @@ def test_workday_adapter_is_created_lazily() -> None:
 
     browser_factory.assert_called_once_with()
     assert isinstance(adapter, WorkdayFormAdapter)
+    assert adapter.job_url == url
+    assert adapter.browser_session is browser_session
+
+
+def test_tiktok_adapter_is_created_lazily() -> None:
+    browser_session = MagicMock(spec=BrowserSession)
+    browser_factory = MagicMock(return_value=browser_session)
+    registry = build_application_adapter_registry(
+        browser_session_factory=browser_factory,
+    )
+    url = "https://careers.tiktok.com/resume/7668557209047894325/apply"
+
+    adapter = registry.create(ATSProvider.TIKTOK, url)
+
+    browser_factory.assert_called_once_with()
+    assert isinstance(adapter, TikTokFormAdapter)
     assert adapter.job_url == url
     assert adapter.browser_session is browser_session
 

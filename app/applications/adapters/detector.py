@@ -10,6 +10,7 @@ class ATSProvider(str, Enum):
     LEVER = "LEVER"
     ASHBY = "ASHBY"
     WORKDAY = "WORKDAY"
+    TIKTOK = "TIKTOK"
     UNKNOWN = "UNKNOWN"
 
 
@@ -77,6 +78,9 @@ class ATSDetector:
 
         if cls._is_workday_host(hostname):
             return ATSProvider.WORKDAY
+
+        if hostname == "careers.tiktok.com":
+            return ATSProvider.TIKTOK
 
         return ATSProvider.UNKNOWN
 

@@ -32,6 +32,7 @@ class ApplicationFormValidator:
         ATSProvider.LEVER: "lever",
         ATSProvider.ASHBY: "ashby",
         ATSProvider.WORKDAY: "workday",
+        ATSProvider.TIKTOK: "tiktok",
     }
 
     def validate(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 from typing import Iterable
 from urllib.parse import urlsplit, urlunsplit
 
@@ -44,6 +45,7 @@ class ApplicationTargetResolver:
                 ATSProvider.LEVER,
                 ATSProvider.ASHBY,
                 ATSProvider.WORKDAY,
+                ATSProvider.TIKTOK,
             }
         )
 
@@ -82,6 +84,12 @@ class ApplicationTargetResolver:
             if (
                 provider == ATSProvider.WORKDAY
                 and not self._is_workday_manual_application_path(canonical)
+            ):
+                saw_invalid = True
+                continue
+            if (
+                provider == ATSProvider.TIKTOK
+                and not self._is_tiktok_application_path(canonical)
             ):
                 saw_invalid = True
                 continue
@@ -170,6 +178,14 @@ class ApplicationTargetResolver:
             and "job" in lowered[:-2]
             and lowered[-2:] == ["apply", "applymanually"]
         )
+
+    @staticmethod
+    def _is_tiktok_application_path(url: str) -> bool:
+        return re.fullmatch(
+            r"/resume/[1-9][0-9]*/apply/?",
+            urlsplit(url).path,
+            flags=re.IGNORECASE,
+        ) is not None
 
 
 def resolve_job_application_target(job: Job) -> ApplicationTargetResult:

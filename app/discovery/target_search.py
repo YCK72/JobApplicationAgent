@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from app.applications.adapters.detector import ATSProvider
 from app.applications.target_resolver import (
@@ -85,9 +86,9 @@ class ApplicationTargetSearchResolver:
             evidence_key = self._normalize(evidence)
             if company_key not in evidence_key or title_key not in evidence_key:
                 continue
-            target = self._target_resolver.resolve(
-                [item.get("url") or item.get("id") or item.get("link")]
-            )
+            candidate = item.get("url") or item.get("id") or item.get("link")
+            candidate = self._official_application_url(candidate)
+            target = self._target_resolver.resolve([candidate])
             if (
                 target.status == ApplicationTargetStatus.RESOLVED
                 and target.application_url is not None
@@ -136,3 +137,20 @@ class ApplicationTargetSearchResolver:
     @staticmethod
     def _normalize(value: str) -> str:
         return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+    @staticmethod
+    def _official_application_url(value: object) -> object:
+        """Convert an exact official TikTok job result to its apply route."""
+
+        if not isinstance(value, str):
+            return value
+        try:
+            parsed = urlsplit(value.strip())
+        except ValueError:
+            return value
+        if parsed.scheme.lower() != "https" or parsed.hostname != "lifeattiktok.com":
+            return value
+        match = re.fullmatch(r"/search/([1-9][0-9]*)/?", parsed.path)
+        if match is None:
+            return value
+        return f"https://careers.tiktok.com/resume/{match.group(1)}/apply"

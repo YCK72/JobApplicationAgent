@@ -82,6 +82,47 @@ def test_target_search_resolves_one_exact_supported_ats_result() -> None:
     )
 
 
+def test_target_search_derives_official_tiktok_application_url() -> None:
+    client = MagicMock()
+    client.search.return_value = {
+        "citations": [
+            {
+                "title": (
+                    "TikTok Software Engineer Graduate "
+                    "(Foundation Platform) - 2027 Start"
+                ),
+                "url": "https://lifeattiktok.com/search/7668557209047894325",
+            },
+        ]
+    }
+
+    result = ApplicationTargetSearchResolver(client=client).resolve(
+        company="TikTok",
+        title="Software Engineer Graduate (Foundation Platform) - 2027 Start",
+    )
+
+    assert result.status == TargetSearchStatus.RESOLVED
+    assert result.provider == ATSProvider.TIKTOK
+    assert result.application_url == (
+        "https://careers.tiktok.com/resume/7668557209047894325/apply"
+    )
+
+
+def test_tiktok_target_requires_exact_official_application_path() -> None:
+    resolver = ApplicationTargetResolver()
+
+    valid = resolver.resolve([
+        "https://careers.tiktok.com/resume/7668557209047894325/apply"
+    ])
+    invalid = resolver.resolve([
+        "https://careers.tiktok.com/position/7668557209047894325/detail"
+    ])
+
+    assert valid.status == ApplicationTargetStatus.RESOLVED
+    assert valid.provider == ATSProvider.TIKTOK
+    assert invalid.status == ApplicationTargetStatus.INVALID
+
+
 def test_target_search_rejects_result_without_exact_job_evidence() -> None:
     client = MagicMock()
     client.search.return_value = {
