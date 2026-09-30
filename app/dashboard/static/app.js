@@ -7,6 +7,9 @@ const state = {
   history: [], historyJob: null,
   preview: null, previewJob: null,
   launching: false,
+  submissionReview: null, submissionJob: null,
+  submissionOutcome: "NOT_SUBMITTED", submissionEvidence: "",
+  recordingSubmission: false,
 };
 const elements = {
   metrics: document.querySelector("#metrics"),
@@ -37,6 +40,10 @@ const elements = {
   previewJob: document.querySelector("#preview-job"),
   previewContent: document.querySelector("#preview-content"),
   previewClose: document.querySelector("#preview-close"),
+  submissionPanel: document.querySelector("#submission-recording-panel"),
+  submissionJob: document.querySelector("#submission-job"),
+  submissionContent: document.querySelector("#submission-content"),
+  submissionClose: document.querySelector("#submission-close"),
 };
 
 const metricDefinitions = [
@@ -278,6 +285,12 @@ function renderTable() {
       history.type = "button";
       history.addEventListener("click", () => { openReviewHistory(job); });
       linkCell.append(history);
+      if (job.submission_recording_eligible) {
+        const record = createNode("button", "submission-open", "Record result");
+        record.type = "button";
+        record.addEventListener("click", () => { openSubmissionReview(job); });
+        linkCell.append(record);
+      }
     }
 
     row.append(
@@ -477,6 +490,144 @@ async function launchApplication(preview, button, checkbox) {
   }
 }
 
+async function openSubmissionReview(job) {
+  try {
+    const response = await fetch(`/api/jobs/${job.job_id}/submission-review`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || payload.reason || "Submission review could not be loaded.");
+    state.submissionReview = payload;
+    state.submissionJob = job;
+    state.submissionOutcome = "NOT_SUBMITTED";
+    state.submissionEvidence = "";
+    state.recordingSubmission = false;
+    elements.submissionJob.textContent = `${job.company || "Unknown company"} — ${job.title || "Untitled role"}`;
+    elements.submissionPanel.hidden = false;
+    renderSubmissionReview();
+    elements.submissionPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (error) {
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice error";
+    elements.reviewNotice.textContent = error instanceof Error ? error.message : "Submission review could not be loaded.";
+  }
+}
+
+function renderSubmissionReview() {
+  const review = state.submissionReview;
+  if (!review) return;
+  const form = createNode("form", "submission-form");
+  const introduction = createNode("p", "submission-guidance", review.reason);
+  const safety = createNode("p", "submission-safety", "This records what you observed after manual review. It cannot click Submit or inspect the browser.");
+
+  const outcomeLabel = createNode("label", "submission-field");
+  outcomeLabel.append(createNode("span", "", "Observed outcome"));
+  const outcome = createNode("select", "submission-outcome");
+  for (const value of ["NOT_SUBMITTED", "UNCONFIRMED", "CONFIRMED"]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value === "CONFIRMED" ? "Submitted — success independently confirmed" : value === "UNCONFIRMED" ? "Submitted — success not confirmed" : "Not submitted";
+    outcome.append(option);
+  }
+  outcome.value = state.submissionOutcome;
+  outcomeLabel.append(outcome);
+
+  const evidenceLabel = createNode("label", "submission-field");
+  evidenceLabel.append(createNode("span", "", "Evidence or observation"));
+  const evidence = createNode("textarea", "submission-evidence");
+  evidence.rows = 3;
+  evidence.maxLength = 2000;
+  evidence.value = state.submissionEvidence;
+  evidence.placeholder = "For example: portal displayed confirmation number 123";
+  evidenceLabel.append(evidence);
+
+  const consent = createNode("label", "submission-consent");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  const consentText = createNode("span", "", "I confirm this is the outcome I independently observed for this exact job.");
+  consent.append(checkbox, consentText);
+
+  const action = createNode("button", "submission-record", "Record outcome");
+  action.type = "submit";
+  action.disabled = true;
+  const updateAction = () => {
+    const needsEvidence = outcome.value === "CONFIRMED";
+    evidence.required = needsEvidence;
+    evidence.disabled = outcome.value === "NOT_SUBMITTED" || state.recordingSubmission;
+    action.disabled = state.recordingSubmission || !checkbox.checked || (needsEvidence && !evidence.value.trim());
+  };
+  outcome.addEventListener("change", () => {
+    state.submissionOutcome = outcome.value;
+    if (outcome.value === "NOT_SUBMITTED") {
+      evidence.value = "";
+      state.submissionEvidence = "";
+    }
+    checkbox.checked = false;
+    updateAction();
+  });
+  evidence.addEventListener("input", () => {
+    state.submissionEvidence = evidence.value;
+    updateAction();
+  });
+  checkbox.addEventListener("change", updateAction);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (action.disabled) return;
+    await recordSubmissionOutcome(action, outcome, evidence, checkbox);
+  });
+  form.append(introduction, safety, outcomeLabel, evidenceLabel, consent, action);
+  replaceChildren(elements.submissionContent, [form]);
+  updateAction();
+}
+
+async function recordSubmissionOutcome(button, outcome, evidence, checkbox) {
+  const review = state.submissionReview;
+  if (!review?.authorization?.token) return;
+  state.recordingSubmission = true;
+  button.disabled = true;
+  outcome.disabled = true;
+  evidence.disabled = true;
+  checkbox.disabled = true;
+  button.textContent = "Recording…";
+  elements.submissionClose.disabled = true;
+  try {
+    const selectedOutcome = outcome.value;
+    const confirmation = review.authorization.confirmations?.[selectedOutcome];
+    const response = await fetch(`/api/jobs/${review.job_id}/submission-recording`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        authorization_token: review.authorization.token,
+        outcome: selectedOutcome,
+        confirmation,
+        evidence: selectedOutcome === "NOT_SUBMITTED" ? null : evidence.value,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const trackerDetail = payload.tracker_error ? ` Tracker refresh failed: ${payload.tracker_error}` : "";
+      throw new Error(`${payload.error || payload.reason || "Submission outcome could not be recorded."}${trackerDetail}`);
+    }
+    elements.submissionPanel.hidden = true;
+    state.submissionReview = null;
+    state.submissionJob = null;
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice success";
+    elements.reviewNotice.textContent = `${label(payload.status)} recorded. ${payload.reason}`;
+    await refresh();
+  } catch (error) {
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice error";
+    elements.reviewNotice.textContent = error instanceof Error ? error.message : "Submission outcome could not be recorded.";
+    state.submissionReview = null;
+  } finally {
+    state.recordingSubmission = false;
+    button.disabled = true;
+    outcome.disabled = true;
+    evidence.disabled = true;
+    checkbox.disabled = true;
+    elements.submissionClose.disabled = false;
+  }
+}
+
 async function assignTarget(jobId) {
   try {
     const response = await fetch(`/api/jobs/${jobId}/application-target`, {
@@ -646,6 +797,14 @@ elements.previewClose.addEventListener("click", () => {
   state.preview = null;
   state.previewJob = null;
   state.launching = false;
+});
+elements.submissionClose.addEventListener("click", () => {
+  elements.submissionPanel.hidden = true;
+  state.submissionReview = null;
+  state.submissionJob = null;
+  state.submissionOutcome = "NOT_SUBMITTED";
+  state.submissionEvidence = "";
+  state.recordingSubmission = false;
 });
 
 renderMetrics();

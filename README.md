@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1442 passed`
+**Latest verified full regression:** `1455 passed`
 
-**Most recently completed milestone:** **62C — retained browser review sessions**
+**Most recently completed milestone:** **62D — dashboard submission outcome recording**
 
-**Current development milestone:** **62C — retained browser review sessions**
+**Current development status:** **Feature-complete safety-first assisted workflow**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -363,7 +363,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1442 passed
+1455 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -396,7 +396,12 @@ wrong-job authorizations fail closed. A successful run stops at
 `FORM_STARTED`, retains one browser for up to fifteen minutes of human review,
 and never submits or records `APPLIED`. The dashboard exposes an explicit
 **Close review session** action; timeout and server shutdown also close every
-retained session.
+retained session. After closing the browser, **Record result** opens a separate
+post-review boundary. A fresh one-use authorization records `APPLIED` only
+when the user explicitly reports independently confirmed success and supplies
+nonblank evidence. Unconfirmed attempts become `SUBMISSION_UNCONFIRMED`, and
+`NOT_SUBMITTED` leaves the lifecycle unchanged. This boundary cannot operate
+the browser or submit an application.
 See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
 instructions.
 
@@ -444,8 +449,8 @@ and lifecycle details.
 
 ### 11. Record the post-review submission result
 
-After manually reviewing and submitting an application, record independently
-confirmed success with evidence:
+After manually reviewing and submitting an application, use **Record result**
+in the dashboard or record independently confirmed success from the CLI:
 
 ```powershell
 python -m scripts.record_submission `

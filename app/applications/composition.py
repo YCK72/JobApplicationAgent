@@ -394,13 +394,26 @@ def build_submission_recording_runner(
     """Compose exact-ID post-review recording with tracker refresh."""
 
     database = JobDatabase(Path(database_path))
+    return build_submission_recording_runner_from_dependencies(
+        database=database,
+        tracker=ExcelTracker(
+            database=database,
+            export_path=Path(export_path),
+        ),
+    )
+
+
+def build_submission_recording_runner_from_dependencies(
+    *,
+    database: JobDatabase,
+    tracker: ExcelTracker,
+) -> SubmissionRecordingRunner:
+    """Compose post-review recording around shared persistence services."""
+
     return SubmissionRecordingRunner(
         database=database,
         confirmation_service=build_submission_confirmation_service(
             database=database,
         ),
-        tracker=ExcelTracker(
-            database=database,
-            export_path=Path(export_path),
-        ),
+        tracker=tracker,
     )

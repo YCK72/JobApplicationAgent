@@ -15,6 +15,7 @@ from app.applications.submission_recording import (
 )
 from app.applications.composition import (
     build_submission_recording_runner,
+    build_submission_recording_runner_from_dependencies,
 )
 from app.jobs.models import ApplicationStatus, Job
 from app.tracking.database import JobDatabase
@@ -221,6 +222,22 @@ def test_production_composition_shares_database_and_has_no_browser(
     assert runner.tracker.database is runner.database
     assert not hasattr(runner, "workflow")
     assert not hasattr(runner, "browser_session_factory")
+
+
+def test_shared_submission_composition_preserves_dependencies(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(tmp_path / "jobs.db")
+    tracker = MagicMock()
+
+    runner = build_submission_recording_runner_from_dependencies(
+        database=database,
+        tracker=tracker,
+    )
+
+    assert runner.database is database
+    assert runner.confirmation_service.database is database
+    assert runner.tracker is tracker
 
 
 def test_cli_forwards_explicit_confirmed_evidence(capsys) -> None:

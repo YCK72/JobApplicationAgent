@@ -126,6 +126,34 @@ The endpoints are:
 - `POST /api/jobs/{job_id}/review-session/close` with exact close confirmation
   to release the retained browser without changing application status.
 
+## Post-review outcome recording
+
+After manually reviewing the filled form, complete any submission yourself and
+close the retained browser session. Select **Record result** for the exact job.
+The panel defaults to **Not submitted** and offers three explicit outcomes:
+
+- **Not submitted** leaves the application lifecycle unchanged.
+- **Submitted — success not confirmed** records `SUBMISSION_UNCONFIRMED`.
+- **Submitted — success independently confirmed** requires nonblank evidence
+  before recording `APPLIED`.
+
+Opening the panel is read-only and issues a five-minute, one-use authorization
+bound to the job's saved URL, status, resume, notes, and applied date. The
+server reloads the exact job immediately before recording. Changed, expired,
+reused, wrong-job, or outcome-mismatched authorizations fail closed. An active
+review browser also blocks recording so browser control and lifecycle evidence
+remain separate operations.
+
+The post-review endpoints are:
+
+- `GET /api/jobs/{job_id}/submission-review` for a read-only saved-state review
+  and fresh recording authorization.
+- `POST /api/jobs/{job_id}/submission-recording` for one explicitly confirmed
+  observed outcome.
+
+This service has no browser, form-filling, click, or submission capability.
+SQLite is updated first and the Excel tracker is regenerated afterward.
+
 The editable server must bind to `127.0.0.1`, `::1`, or `localhost`. Target
 assignment accepts JSON only and validates the pasted URL through the same
 HTTPS-only application-target resolver used by the application workflow.

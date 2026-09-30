@@ -4,6 +4,11 @@ This command records evidence supplied after human review. It does not open a
 browser, click Submit, inspect a page, or infer success from the application
 workflow.
 
+The same recording boundary is available from the local dashboard through
+**Record result**. The dashboard adds a short-lived, one-use authorization and
+stale-state check before delegating to this service; it does not add any
+browser or submission capability.
+
 ## Confirmed submission
 
 Use this only after you manually submitted the exact application and observed

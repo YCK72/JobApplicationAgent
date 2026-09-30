@@ -38,8 +38,15 @@ from app.dashboard.review_sessions import (
     ApplicationReviewSessionManager,
     ReviewSessionSnapshot,
 )
+from app.dashboard.submission_recording import (
+    DashboardSubmissionRecordingService,
+    DashboardSubmissionStatus,
+    OUTCOME_CONFIRMATIONS,
+    SubmissionReviewStatus,
+)
 from app.applications.composition import (
     build_single_job_application_launcher_from_dependencies,
+    build_submission_recording_runner_from_dependencies,
 )
 from app.jobs.composition import build_job_pipeline
 from app.tracking.database import DEFAULT_DB_PATH, JobDatabase
@@ -73,6 +80,9 @@ class DashboardServer(ThreadingHTTPServer):
         review_resolution_service: ApplicationReviewResolutionService | None,
         application_preview_service: ApplicationPreviewService | None,
         application_launch_service: DashboardApplicationLaunchService | None,
+        submission_recording_service: (
+            DashboardSubmissionRecordingService | None
+        ),
     ) -> None:
         super().__init__(server_address, request_handler)
         self.reader = reader
@@ -81,6 +91,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.review_resolution_service = review_resolution_service
         self.application_preview_service = application_preview_service
         self.application_launch_service = application_launch_service
+        self.submission_recording_service = submission_recording_service
 
     def server_close(self) -> None:
         if self.application_launch_service is not None:
@@ -127,6 +138,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if match and self.server.application_launch_service is not None:
             self._close_review_session(int(match.group(1)))
             return
+        match = re.fullmatch(
+            r"/api/jobs/([1-9][0-9]*)/submission-recording",
+            path,
+        )
+        if match and self.server.submission_recording_service is not None:
+            self._record_submission_outcome(int(match.group(1)))
+            return
         self._method_not_allowed()
 
     def do_PUT(self) -> None:
@@ -165,6 +183,20 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         ):
             self._serve_application_preview(
                 int(preview_match.group(1)),
+                include_body=include_body,
+            )
+            return
+
+        submission_match = re.fullmatch(
+            r"/api/jobs/([1-9][0-9]*)/submission-review",
+            path,
+        )
+        if (
+            submission_match
+            and self.server.submission_recording_service is not None
+        ):
+            self._serve_submission_review(
+                int(submission_match.group(1)),
                 include_body=include_body,
             )
             return
@@ -234,7 +266,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if reviewer is not None
             else resolver.database
             if resolver is not None
-            else previewer.database if previewer is not None else None
+            else previewer.database
+            if previewer is not None
+            else self.server.submission_recording_service.runner.database
+            if self.server.submission_recording_service is not None
+            else None
         )
         if database is not None:
             snapshot = deepcopy(snapshot)
@@ -269,6 +305,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                             review_session.expires_in_seconds
                             if review_session is not None
                             else None
+                        )
+                    if self.server.submission_recording_service is not None:
+                        item["submission_recording_eligible"] = (
+                            self.server.submission_recording_service
+                            .is_eligible(stored)
                         )
             snapshot["metrics"]["review_queue"] = sum(
                 item.get("review_required") is True
@@ -540,6 +581,145 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             "expires_in_seconds": session.expires_in_seconds,
         }
 
+    def _serve_submission_review(
+        self,
+        job_id: int,
+        *,
+        include_body: bool,
+    ) -> None:
+        try:
+            prepared = self.server.submission_recording_service.prepare(job_id)
+        except Exception:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "Submission review could not be loaded."},
+                include_body=include_body,
+            )
+            return
+        status_code = {
+            SubmissionReviewStatus.READY: HTTPStatus.OK,
+            SubmissionReviewStatus.SESSION_ACTIVE: HTTPStatus.CONFLICT,
+            SubmissionReviewStatus.NOT_FOUND: HTTPStatus.NOT_FOUND,
+            SubmissionReviewStatus.NOT_ELIGIBLE: HTTPStatus.CONFLICT,
+            SubmissionReviewStatus.FAILED: HTTPStatus.INTERNAL_SERVER_ERROR,
+        }[prepared.status]
+        job = prepared.job
+        authorization = None
+        if prepared.authorization_token is not None:
+            authorization = {
+                "token": prepared.authorization_token,
+                "expires_in_seconds": (
+                    prepared.authorization_expires_in_seconds
+                ),
+                "confirmations": OUTCOME_CONFIRMATIONS,
+            }
+        self._send_json(
+            status_code,
+            {
+                "status": prepared.status.value,
+                "reason": prepared.reason,
+                "job_id": prepared.job_id,
+                "job": self._submission_job_payload(job),
+                "authorization": authorization,
+                "may_submit": prepared.may_submit,
+            },
+            include_body=include_body,
+        )
+
+    def _record_submission_outcome(self, job_id: int) -> None:
+        if self.headers.get_content_type() != "application/json":
+            self._send_json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"error": "Content-Type must be application/json."},
+                include_body=True,
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 1 <= length <= 8192:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must contain 1-8192 bytes."},
+                include_body=True,
+            )
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError):
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must be valid JSON."},
+                include_body=True,
+            )
+            return
+        if not isinstance(payload, dict):
+            payload = {}
+        try:
+            result = self.server.submission_recording_service.record(
+                job_id=job_id,
+                authorization_token=payload.get("authorization_token"),
+                outcome=payload.get("outcome"),
+                confirmation=payload.get("confirmation"),
+                evidence=payload.get("evidence"),
+            )
+        except Exception:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "Submission outcome could not be recorded."},
+                include_body=True,
+            )
+            return
+        status_code = {
+            DashboardSubmissionStatus.CONFIRMED: HTTPStatus.OK,
+            DashboardSubmissionStatus.UNCONFIRMED: HTTPStatus.OK,
+            DashboardSubmissionStatus.NOT_SUBMITTED: HTTPStatus.OK,
+            DashboardSubmissionStatus.BLOCKED: HTTPStatus.CONFLICT,
+            DashboardSubmissionStatus.FAILED: HTTPStatus.INTERNAL_SERVER_ERROR,
+            DashboardSubmissionStatus.AUTHORIZATION_DENIED: HTTPStatus.FORBIDDEN,
+            DashboardSubmissionStatus.AUTHORIZATION_EXPIRED: HTTPStatus.FORBIDDEN,
+            DashboardSubmissionStatus.PREVIEW_STALE: HTTPStatus.CONFLICT,
+            DashboardSubmissionStatus.SESSION_ACTIVE: HTTPStatus.CONFLICT,
+            DashboardSubmissionStatus.INVALID_EVIDENCE: HTTPStatus.BAD_REQUEST,
+        }[result.status]
+        if result.tracker_error is not None:
+            status_code = HTTPStatus.INTERNAL_SERVER_ERROR
+        self._send_json(
+            status_code,
+            {
+                "status": result.status.value,
+                "reason": result.reason,
+                "job_id": result.job_id,
+                "job": self._submission_job_payload(result.job),
+                "export_path": (
+                    str(result.export_path)
+                    if result.export_path is not None
+                    else None
+                ),
+                "tracker_error": result.tracker_error,
+                "may_submit": result.may_submit,
+            },
+            include_body=True,
+        )
+
+    @staticmethod
+    def _submission_job_payload(job) -> dict[str, Any] | None:
+        if job is None:
+            return None
+        return {
+            "company": job.company,
+            "title": job.title,
+            "application_status": job.status.value,
+            "date_applied": (
+                job.date_applied.isoformat()
+                if hasattr(job.date_applied, "isoformat")
+                else str(job.date_applied)
+                if job.date_applied is not None
+                else None
+            ),
+        }
+
     def _assign_application_target(self, job_id: int) -> None:
         content_type = self.headers.get_content_type()
         if content_type != "application/json":
@@ -799,6 +979,9 @@ def create_dashboard_server(
     review_resolution_service: ApplicationReviewResolutionService | None = None,
     application_preview_service: ApplicationPreviewService | None = None,
     application_launch_service: DashboardApplicationLaunchService | None = None,
+    submission_recording_service: (
+        DashboardSubmissionRecordingService | None
+    ) = None,
 ) -> DashboardServer:
     if not isinstance(port, int) or not 0 <= port <= 65535:
         raise ValueError("port must be an integer from 0 to 65535")
@@ -809,6 +992,7 @@ def create_dashboard_server(
             target_review_service is not None
             or review_resolution_service is not None
             or application_launch_service is not None
+            or submission_recording_service is not None
         )
         and host.strip().lower() not in {"127.0.0.1", "::1", "localhost"}
     ):
@@ -823,6 +1007,7 @@ def create_dashboard_server(
         review_resolution_service=review_resolution_service,
         application_preview_service=application_preview_service,
         application_launch_service=application_launch_service,
+        submission_recording_service=submission_recording_service,
     )
 
 
@@ -890,6 +1075,16 @@ def main(argv: list[str] | None = None) -> int:
             launcher=launcher,
             review_session_manager=review_session_manager,
         )
+        submission_runner = (
+            build_submission_recording_runner_from_dependencies(
+                database=database,
+                tracker=tracker,
+            )
+        )
+        submission_recording_service = DashboardSubmissionRecordingService(
+            runner=submission_runner,
+            active_session_lookup=review_session_manager.snapshot,
+        )
         server = create_dashboard_server(
             reader=TrackerWorkbookReader(args.workbook),
             host=args.host,
@@ -898,6 +1093,7 @@ def main(argv: list[str] | None = None) -> int:
             review_resolution_service=resolution_service,
             application_preview_service=preview_service,
             application_launch_service=launch_service,
+            submission_recording_service=submission_recording_service,
         )
     except (OSError, ValueError) as exc:
         print(f"Dashboard could not start: {exc}", file=sys.stderr)

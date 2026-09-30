@@ -21,6 +21,12 @@ from app.dashboard.application_launch import (
     PreparedApplicationPreview,
 )
 from app.dashboard.review_sessions import ReviewSessionSnapshot
+from app.dashboard.submission_recording import (
+    DashboardSubmissionResult,
+    DashboardSubmissionStatus,
+    PreparedSubmissionRecording,
+    SubmissionReviewStatus,
+)
 from app.dashboard.server import create_dashboard_server
 from app.dashboard.review_queue import build_review_queue_item
 from app.dashboard.review_resolution import (
@@ -340,6 +346,10 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             assert "review-session/close" in script
             assert "Active review session" in script
             assert "Close review session" in script
+            assert "submission-review" in script
+            assert "submission-recording" in script
+            assert "Record result" in script
+            assert "independently observed" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()
@@ -990,6 +1000,123 @@ def test_application_launch_api_rejects_missing_authorization(
         thread.join(timeout=5)
 
 
+def test_submission_review_api_is_read_only_and_issues_exact_authorization(
+    tmp_path: Path,
+) -> None:
+    service = MagicMock()
+    service.prepare.return_value = PreparedSubmissionRecording(
+        status=SubmissionReviewStatus.READY,
+        reason="Record the independently observed result.",
+        job_id=7,
+        job=Job(
+            company="Example",
+            title="Software Engineer I",
+            location="Seattle, WA",
+            url="https://example.com/jobs/7",
+            source="test",
+            status=ApplicationStatus.FORM_STARTED,
+        ),
+        authorization_token="record-token",
+        authorization_expires_in_seconds=300,
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        submission_recording_service=service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        with urlopen(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/submission-review",
+            timeout=5,
+        ) as response:
+            payload = json.load(response)
+
+        assert response.status == 200
+        assert payload["status"] == "READY"
+        assert payload["job"]["application_status"] == "FORM_STARTED"
+        assert payload["authorization"] == {
+            "token": "record-token",
+            "expires_in_seconds": 300,
+            "confirmations": {
+                "CONFIRMED": "RECORD_CONFIRMED_SUBMISSION",
+                "UNCONFIRMED": "RECORD_UNCONFIRMED_SUBMISSION",
+                "NOT_SUBMITTED": "RECORD_NOT_SUBMITTED",
+            },
+        }
+        assert payload["may_submit"] is False
+        service.prepare.assert_called_once_with(7)
+        service.record.assert_not_called()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_submission_recording_api_forwards_explicit_outcome(
+    tmp_path: Path,
+) -> None:
+    service = MagicMock()
+    service.record.return_value = DashboardSubmissionResult(
+        status=DashboardSubmissionStatus.CONFIRMED,
+        reason="Successful submission was independently confirmed.",
+        job_id=7,
+        job=Job(
+            company="Example",
+            title="Software Engineer I",
+            location="Seattle, WA",
+            url="https://example.com/jobs/7",
+            source="test",
+            status=ApplicationStatus.APPLIED,
+        ),
+        export_path=tmp_path / "tracker.xlsx",
+    )
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        submission_recording_service=service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/submission-recording",
+            method="POST",
+            data=json.dumps({
+                "authorization_token": "record-token",
+                "outcome": "CONFIRMED",
+                "confirmation": "RECORD_CONFIRMED_SUBMISSION",
+                "evidence": "Portal confirmation number 123",
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+
+        assert response.status == 200
+        assert payload["status"] == "CONFIRMED"
+        assert payload["job"]["application_status"] == "APPLIED"
+        assert payload["may_submit"] is False
+        service.record.assert_called_once_with(
+            job_id=7,
+            authorization_token="record-token",
+            outcome="CONFIRMED",
+            confirmation="RECORD_CONFIRMED_SUBMISSION",
+            evidence="Portal confirmation number 123",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_dashboard_main_composes_preview_and_launch_services(
     tmp_path: Path,
     monkeypatch,
@@ -998,6 +1125,8 @@ def test_dashboard_main_composes_preview_and_launch_services(
     tracker = MagicMock()
     preview_service = MagicMock()
     launch_service = MagicMock()
+    submission_runner = MagicMock()
+    submission_service = MagicMock()
     review_session_manager = MagicMock()
     http_server = MagicMock(server_port=8765)
     database_builder = MagicMock(return_value=database)
@@ -1030,6 +1159,22 @@ def test_dashboard_main_composes_preview_and_launch_services(
         dashboard_server,
         "build_single_job_application_launcher_from_dependencies",
         launcher_builder,
+    )
+    submission_runner_builder = MagicMock(
+        return_value=submission_runner
+    )
+    monkeypatch.setattr(
+        dashboard_server,
+        "build_submission_recording_runner_from_dependencies",
+        submission_runner_builder,
+    )
+    submission_service_builder = MagicMock(
+        return_value=submission_service
+    )
+    monkeypatch.setattr(
+        dashboard_server,
+        "DashboardSubmissionRecordingService",
+        submission_service_builder,
     )
     monkeypatch.setattr(
         dashboard_server,
@@ -1064,12 +1209,23 @@ def test_dashboard_main_composes_preview_and_launch_services(
         launcher=launcher_builder.return_value,
         review_session_manager=review_session_manager,
     )
+    submission_runner_builder.assert_called_once_with(
+        database=database,
+        tracker=tracker,
+    )
+    submission_service_builder.assert_called_once_with(
+        runner=submission_runner,
+        active_session_lookup=review_session_manager.snapshot,
+    )
     assert server_builder.call_args.kwargs[
         "application_preview_service"
     ] is preview_service
     assert server_builder.call_args.kwargs[
         "application_launch_service"
     ] is launch_service
+    assert server_builder.call_args.kwargs[
+        "submission_recording_service"
+    ] is submission_service
     http_server.serve_forever.assert_called_once_with()
     http_server.server_close.assert_called_once_with()
 

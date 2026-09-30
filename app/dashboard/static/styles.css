@@ -154,6 +154,7 @@ tbody tr:hover { background: #fbfcfe; }
 .target-form { display: flex; gap: 6px; align-items: center; }
 .target-input { width: min(320px, 32vw); height: 32px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; }
 .history-open { height: 32px; padding: 0 9px; border-color: var(--line); color: var(--blue); background: white; font-size: .72rem; font-weight: 800; }
+.submission-open { height: 32px; padding: 0 9px; border-color: #78c4b2; color: #106e5e; background: white; font-size: .72rem; font-weight: 800; }
 .history-panel { padding: 22px 24px 26px; border-top: 1px solid var(--line); background: #fbfcfe; }
 .history-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .history-heading h3 { margin: 0 0 5px; color: var(--navy); }
@@ -201,6 +202,19 @@ tbody tr:hover { background: #fbfcfe; }
 .session-expiry { display: block; color: #39786e; font-size: .7rem; }
 .session-close { margin-top: 12px; color: #106e5e; border-color: #78c4b2; background: white; font-weight: 800; }
 .session-close:hover { background: #d8f2eb; }
+.submission-panel { padding: 22px 24px 26px; border-top: 1px solid var(--line); background: #f6fbfa; }
+.submission-content { margin-top: 18px; }
+.submission-form { display: grid; gap: 14px; max-width: 760px; }
+.submission-guidance, .submission-safety { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.submission-safety { padding: 11px 13px; border: 1px solid #c9d8fa; border-radius: 9px; color: #315784; background: var(--blue-soft); }
+.submission-field > span { display: block; margin-bottom: 6px; color: var(--muted); font-size: .72rem; font-weight: 800; }
+.submission-outcome, .submission-evidence { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; color: var(--ink); background: white; }
+.submission-outcome { height: 40px; }
+.submission-evidence { resize: vertical; }
+.submission-consent { display: flex; align-items: start; gap: 9px; font-size: .78rem; font-weight: 700; line-height: 1.4; }
+.submission-consent input { width: 17px; height: 17px; margin: 0; accent-color: var(--teal); }
+.submission-record { width: max-content; color: white; border-color: var(--teal); background: var(--teal); font-weight: 800; }
+.submission-record:hover { background: #117565; }
 .empty-state { padding: 54px 20px; text-align: center; }
 .empty-state strong, .empty-state span { display: block; }
 .empty-state span { margin-top: 6px; color: var(--muted); }
