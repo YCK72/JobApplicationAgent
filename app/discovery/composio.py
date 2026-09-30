@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from enum import Enum
+import html
 import math
 import os
 import re
@@ -28,6 +31,109 @@ class _NoRedirects(HTTPRedirectHandler):
 class SearchClient(Protocol):
     def search(self, query: str) -> dict[str, Any]: ...
     def fetch(self, urls: list[str]) -> dict[str, Any]: ...
+
+
+class LinkedInAvailabilityStatus(str, Enum):
+    AVAILABLE = "AVAILABLE"
+    CLOSED = "CLOSED"
+    UNVERIFIED = "UNVERIFIED"
+
+
+@dataclass(frozen=True)
+class LinkedInAvailabilityResult:
+    status: LinkedInAvailabilityStatus
+    reason: str
+
+
+class LinkedInAvailabilityChecker(Protocol):
+    def check(self, url: str) -> LinkedInAvailabilityResult: ...
+
+
+_CLOSED_POSTING_MARKERS = (
+    "no longer accepting applications",
+    "this job is no longer available",
+    "this job posting is no longer available",
+    "applications are closed",
+    "application deadline has passed",
+    "position has been filled",
+)
+
+
+def _contains_closed_posting_marker(value: str) -> bool:
+    normalized = html.unescape(value).casefold()
+    return any(marker in normalized for marker in _CLOSED_POSTING_MARKERS)
+
+
+class LinkedInPublicAvailabilityChecker:
+    """Read one public job URL and preserve its exact numeric identity."""
+
+    MAX_RESPONSE_BYTES = 1_000_000
+
+    def __init__(self, *, timeout_seconds: float = 20, opener=None) -> None:
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be finite and positive")
+        self._timeout = timeout_seconds
+        self._opener = opener if opener is not None else build_opener()
+
+    def check(self, url: str) -> LinkedInAvailabilityResult:
+        canonical = canonical_linkedin_job_url(url)
+        if canonical is None:
+            return LinkedInAvailabilityResult(
+                LinkedInAvailabilityStatus.UNVERIFIED,
+                "LinkedIn availability requires a valid job-detail URL.",
+            )
+        request = Request(
+            canonical,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        try:
+            with self._opener.open(request, timeout=self._timeout) as response:
+                final_url = response.geturl()
+                body = response.read(self.MAX_RESPONSE_BYTES + 1)
+        except HTTPError as exc:
+            if exc.code in {404, 410}:
+                return LinkedInAvailabilityResult(
+                    LinkedInAvailabilityStatus.CLOSED,
+                    f"LinkedIn returned HTTP {exc.code} for the posting.",
+                )
+            return self._unverified()
+        except (URLError, TimeoutError, OSError):
+            return self._unverified()
+
+        final = urlsplit(final_url)
+        if "expired_jd_redirect" in final.query.casefold():
+            return LinkedInAvailabilityResult(
+                LinkedInAvailabilityStatus.CLOSED,
+                "LinkedIn redirected the expired posting.",
+            )
+        final_canonical = canonical_linkedin_job_url(final_url)
+        if final_canonical != canonical:
+            return LinkedInAvailabilityResult(
+                LinkedInAvailabilityStatus.UNVERIFIED,
+                "LinkedIn redirected away from the exact job-detail page.",
+            )
+        if len(body) > self.MAX_RESPONSE_BYTES:
+            return self._unverified()
+        text = body.decode("utf-8", errors="replace")
+        if _contains_closed_posting_marker(text):
+            return LinkedInAvailabilityResult(
+                LinkedInAvailabilityStatus.CLOSED,
+                "LinkedIn reports that the posting is closed.",
+            )
+        return LinkedInAvailabilityResult(
+            LinkedInAvailabilityStatus.AVAILABLE,
+            "LinkedIn retained the exact public job-detail page.",
+        )
+
+    @staticmethod
+    def _unverified() -> LinkedInAvailabilityResult:
+        return LinkedInAvailabilityResult(
+            LinkedInAvailabilityStatus.UNVERIFIED,
+            "LinkedIn availability could not be verified.",
+        )
 
 
 class ComposioSearchClient:
@@ -133,7 +239,14 @@ class LinkedInComposioJobSource(JobSource):
     existing pipeline retains all classification, scoring and persistence.
     """
 
-    def __init__(self, *, client: SearchClient, query: str, max_results: int = 5) -> None:
+    def __init__(
+        self,
+        *,
+        client: SearchClient,
+        query: str,
+        max_results: int = 5,
+        availability_checker: LinkedInAvailabilityChecker | None = None,
+    ) -> None:
         if not isinstance(query, str) or not query.strip():
             raise ValueError("query must not be empty")
         if type(max_results) is not int or not 1 <= max_results <= 20:
@@ -141,6 +254,7 @@ class LinkedInComposioJobSource(JobSource):
         self.client = client
         self.query = query.strip()
         self.max_results = max_results
+        self.availability_checker = availability_checker
         self.last_candidate_count = 0
         self.last_skipped_count = 0
 
@@ -196,7 +310,7 @@ class LinkedInComposioJobSource(JobSource):
         title, text = page.get("title"), page.get("text")
         if not isinstance(title, str) or not isinstance(text, str) or not text.strip():
             return None
-        if "no longer accepting applications" in text.casefold():
+        if _contains_closed_posting_marker(text):
             return None
         match = re.fullmatch(r"(?P<company>.+?) hiring (?P<title>.+?) in (?P<location>.+?) \| LinkedIn(?: Jobs)?", title.strip())
         if match is None:
@@ -211,6 +325,11 @@ class LinkedInComposioJobSource(JobSource):
         headings = re.findall(r"^#\s+(.+?)\s*$", text, flags=re.MULTILINE)
         if fields["title"] not in headings or fields["company"] not in text:
             return None
+        availability = None
+        if self.availability_checker is not None:
+            availability = self.availability_checker.check(url)
+            if availability.status != LinkedInAvailabilityStatus.AVAILABLE:
+                return None
         target = ApplicationTargetResolver().resolve(
             self._explicit_application_targets(page)
         )
@@ -222,7 +341,12 @@ class LinkedInComposioJobSource(JobSource):
                              metadata={"discovery_provider": "composio_search",
                                        "content_kind": "extracted_page_text",
                                        "tool_version": ComposioSearchClient.TOOL_VERSION,
-                                       "freshness_verified": False,
+                                       "freshness_verified": availability is not None,
+                                       "availability_reason": (
+                                           availability.reason
+                                           if availability is not None
+                                           else None
+                                       ),
                                        "application_target_status": target.status.value,
                                        "application_target_reason": target.reason})
 

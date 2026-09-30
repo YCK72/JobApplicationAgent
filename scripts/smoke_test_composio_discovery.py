@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 from app.discovery.composio import (
     ComposioSearchClient, LinkedInComposioJobSource,
+    LinkedInPublicAvailabilityChecker,
 )
 from app.discovery.runner import DiscoveryRunner
 from app.tracking.database import JobDatabase
@@ -32,6 +33,7 @@ def main() -> int:
         source = LinkedInComposioJobSource(
             client=ComposioSearchClient.from_environment(),
             query=args.query, max_results=args.limit,
+            availability_checker=LinkedInPublicAvailabilityChecker(),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

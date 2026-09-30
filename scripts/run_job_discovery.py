@@ -94,6 +94,8 @@ def main(
             {
                 "processed": result.processed_count,
                 "stored_jobs": result.stored_job_count,
+                "expired_jobs_filtered": result.expired_job_count,
+                "expired_job_ids": list(result.expired_job_ids),
                 "outcomes": result.outcome_counts,
                 "errors": result.discovery_result.errors,
                 "excel": str(result.export_path),

@@ -5,7 +5,9 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from app.discovery.composio import (
-    ComposioDiscoveryError, ComposioSearchClient, LinkedInComposioJobSource,
+    ComposioDiscoveryError, ComposioSearchClient,
+    LinkedInAvailabilityResult, LinkedInAvailabilityStatus,
+    LinkedInComposioJobSource, LinkedInPublicAvailabilityChecker,
     canonical_linkedin_job_url,
 )
 from app.discovery.runner import DiscoveryRunner
@@ -82,6 +84,73 @@ def test_deduplicates_and_bounds_fetches():
 ])
 def test_incomplete_expired_or_mismatched_pages_are_skipped(changes):
     assert source(client_with_page(**changes)).discover() == []
+
+
+def test_explicit_public_availability_check_blocks_closed_candidate():
+    checker = MagicMock()
+    checker.check.return_value = LinkedInAvailabilityResult(
+        status=LinkedInAvailabilityStatus.CLOSED,
+        reason="LinkedIn redirected the expired posting.",
+    )
+
+    adapter = source(availability_checker=checker)
+
+    assert adapter.discover() == []
+    checker.check.assert_called_once_with(
+        "https://www.linkedin.com/jobs/view/12345"
+    )
+
+
+class PublicPageResponse:
+    def __init__(self, final_url: str, body: bytes = b"active posting"):
+        self.status = 200
+        self._final_url = final_url
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def geturl(self):
+        return self._final_url
+
+    def read(self, limit):
+        return self._body
+
+
+def test_public_availability_checker_accepts_same_numeric_job_identity():
+    opener = MagicMock()
+    opener.open.return_value = PublicPageResponse(
+        "https://www.linkedin.com/jobs/view/software-engineer-12345"
+    )
+
+    result = LinkedInPublicAvailabilityChecker(opener=opener).check(URL)
+
+    assert result.status == LinkedInAvailabilityStatus.AVAILABLE
+
+
+def test_public_availability_checker_detects_expired_redirect():
+    opener = MagicMock()
+    opener.open.return_value = PublicPageResponse(
+        "https://www.linkedin.com/jobs/example-jobs?trk=expired_jd_redirect"
+    )
+
+    result = LinkedInPublicAvailabilityChecker(opener=opener).check(URL)
+
+    assert result.status == LinkedInAvailabilityStatus.CLOSED
+    assert "expired" in result.reason.lower()
+
+
+def test_public_availability_checker_keeps_transport_failure_unverified():
+    opener = MagicMock()
+    opener.open.side_effect = URLError("temporary failure")
+
+    result = LinkedInPublicAvailabilityChecker(opener=opener).check(URL)
+
+    assert result.status == LinkedInAvailabilityStatus.UNVERIFIED
+    assert "temporary failure" not in result.reason
 
 
 def test_alternate_explicit_title_format():

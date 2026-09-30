@@ -11,9 +11,14 @@ from app.discovery.production import (
     PersistentDiscoveryRunner,
     build_persistent_discovery_runner,
 )
+from app.discovery.composio import (
+    LinkedInAvailabilityResult,
+    LinkedInAvailabilityStatus,
+)
 from app.discovery.runner import DiscoveryRunResult
-from app.jobs.models import Job
+from app.jobs.models import ApplicationStatus, Job
 from app.jobs.pipeline import PipelineOutcome, PipelineResult
+from app.tracking.database import JobDatabase
 from scripts.run_job_discovery import main
 
 
@@ -89,6 +94,73 @@ def test_tracker_is_refreshed_after_source_level_failure(
     tracker.generate.assert_called_once_with()
 
 
+def test_persistent_runner_filters_explicitly_closed_saved_linkedin_job(
+    tmp_path: Path,
+) -> None:
+    database = JobDatabase(tmp_path / "jobs.db")
+    job_id = database.add_job(Job(
+        company="Uber",
+        title="Software Engineer I",
+        location="Seattle, WA",
+        url="https://www.linkedin.com/jobs/view/4434080940",
+        source="linkedin_composio",
+        status=ApplicationStatus.NEEDS_REVIEW,
+    ))
+    checker = MagicMock()
+    checker.check.return_value = LinkedInAvailabilityResult(
+        status=LinkedInAvailabilityStatus.CLOSED,
+        reason="LinkedIn redirected the expired posting.",
+    )
+    discovery_runner = MagicMock()
+    discovery_runner.run.return_value = DiscoveryRunResult()
+    tracker = MagicMock()
+    tracker.generate.return_value = tmp_path / "tracker.xlsx"
+
+    result = PersistentDiscoveryRunner(
+        discovery_runner=discovery_runner,
+        database=database,
+        tracker=tracker,
+        availability_checker=checker,
+    ).run()
+
+    stored = database.get_job_by_id(job_id)
+    assert stored.status == ApplicationStatus.FILTERED_OUT
+    assert "expired posting" in stored.notes.lower()
+    assert result.expired_job_ids == (job_id,)
+    assert result.expired_job_count == 1
+
+
+def test_persistent_runner_preserves_unverified_saved_job(tmp_path: Path) -> None:
+    database = JobDatabase(tmp_path / "jobs.db")
+    job_id = database.add_job(Job(
+        company="Example",
+        title="Engineer",
+        location="Remote",
+        url="https://www.linkedin.com/jobs/view/12345",
+        source="linkedin_composio",
+        status=ApplicationStatus.NEEDS_REVIEW,
+    ))
+    checker = MagicMock()
+    checker.check.return_value = LinkedInAvailabilityResult(
+        status=LinkedInAvailabilityStatus.UNVERIFIED,
+        reason="LinkedIn availability could not be verified.",
+    )
+    discovery_runner = MagicMock()
+    discovery_runner.run.return_value = DiscoveryRunResult()
+    tracker = MagicMock()
+    tracker.generate.return_value = tmp_path / "tracker.xlsx"
+
+    result = PersistentDiscoveryRunner(
+        discovery_runner=discovery_runner,
+        database=database,
+        tracker=tracker,
+        availability_checker=checker,
+    ).run()
+
+    assert database.get_job_by_id(job_id).status == ApplicationStatus.NEEDS_REVIEW
+    assert result.expired_job_ids == ()
+
+
 def test_production_builder_persists_and_exports_discovered_jobs(
     tmp_path: Path,
     monkeypatch,
@@ -141,6 +213,11 @@ def test_production_builder_persists_and_exports_discovered_jobs(
     )
     database_path = tmp_path / "jobs.db"
     export_path = tmp_path / "tracker.xlsx"
+    availability_checker = MagicMock()
+    availability_checker.check.return_value = LinkedInAvailabilityResult(
+        status=LinkedInAvailabilityStatus.AVAILABLE,
+        reason="Exact job page remains available.",
+    )
 
     result = build_persistent_discovery_runner(
         query="software engineer Seattle",
@@ -148,6 +225,7 @@ def test_production_builder_persists_and_exports_discovered_jobs(
         database_path=database_path,
         export_path=export_path,
         client=client,
+        availability_checker=availability_checker,
     ).run()
 
     assert result.processed_count == 1

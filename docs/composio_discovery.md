@@ -83,10 +83,22 @@ output setup failed.
   matching Markdown H1 and the company name. Unrecognized layouts are skipped.
 - Explicitly closed postings, failed fetch statuses, non-job pages, and pages
   without corroborating text are skipped. Counts are reported by the smoke run.
+- Before a new LinkedIn result enters the pipeline, a separate bounded public
+  availability request must retain the same numeric job-detail identity.
+  LinkedIn's explicit `expired_jd_redirect`, HTTP 404/410 responses, and common
+  closed-posting messages are rejected. Authentication walls, timeouts, and
+  unrelated redirects are treated as unverified and are skipped without being
+  mislabeled closed.
+- Persistent discovery also revalidates up to twenty saved pre-application
+  LinkedIn jobs before searching. Explicitly expired saved jobs become
+  `FILTERED_OUT`, are reported as `expired_jobs_filtered`, and disappear from
+  the active review queue when Excel refreshes. Applied and in-progress review
+  sessions are never changed by this maintenance pass.
 - Description is extracted page text, not a generated summary. It may contain
   page boilerplate and is capped at 20,000 characters. Relative dates are not
-  guessed; posting date stays unset. Search coverage and posting freshness are
-  not guaranteed, and a fetched page may be cached.
+  guessed; posting date stays unset. Search coverage is not guaranteed, and a
+  fetched page may be cached, so the independent public identity check is the
+  final availability gate.
 - HTTP failures, schema errors and timeouts raise `ComposioDiscoveryError`.
   No automatic retries, broad searches, pagination or account fallback occur.
   Re-run intentionally after resolving rate limits or credentials.
