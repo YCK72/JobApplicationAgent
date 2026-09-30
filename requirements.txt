@@ -1,7 +1,0 @@
-playwright
-openpyxl
-PyYAML
-pydantic
-python-dotenv
-beautifulsoup4
-pytest
