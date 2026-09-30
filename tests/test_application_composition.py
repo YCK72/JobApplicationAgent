@@ -81,6 +81,7 @@ def test_shared_single_job_launcher_composition_remains_browser_lazy(
     database = JobDatabase(tmp_path / "jobs.db")
     tracker = ExcelTracker(database, tmp_path / "tracker.xlsx")
     browser_factory = MagicMock()
+    execution_session_factory = MagicMock()
 
     launcher = build_single_job_application_launcher_from_dependencies(
         database=database,
@@ -88,11 +89,17 @@ def test_shared_single_job_launcher_composition_remains_browser_lazy(
         answer_config_path=answers_path,
         allowed_local_fixture=tmp_path / "fixture.html",
         browser_session_factory=browser_factory,
+        execution_session_factory=execution_session_factory,
     )
 
     assert launcher.database is database
     assert launcher.tracker is tracker
+    assert (
+        launcher.coordinator.workflow._execution_session_factory
+        is execution_session_factory
+    )
     browser_factory.assert_not_called()
+    execution_session_factory.assert_not_called()
 
 
 def test_registry_build_does_not_create_browser_session() -> None:

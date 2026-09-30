@@ -146,6 +146,9 @@ function renderTable() {
 
     const review = document.createElement("td");
     review.className = "review-cell";
+    if (job.review_session_active) {
+      review.append(createNode("span", "review-session-badge", "Browser review active"));
+    }
     if (job.review_required) {
       review.append(
         createNode("span", "review-kind", label(job.review_kind)),
@@ -328,10 +331,11 @@ function previewField(name, value, url = false) {
 function renderApplicationPreview() {
   const preview = state.preview;
   if (!preview) return;
+  const hasActiveSession = preview.review_session?.active === true;
   const heading = createNode("div", "preview-heading");
   heading.append(
-    createNode("span", `pill status-${String(preview.status || "blocked").toLowerCase()}`, label(preview.status)),
-    createNode("p", "preview-reason", preview.reason),
+    createNode("span", `pill status-${String(hasActiveSession ? "review-active" : (preview.status || "blocked")).toLowerCase()}`, label(hasActiveSession ? "REVIEW_ACTIVE" : preview.status)),
+    createNode("p", "preview-reason", hasActiveSession ? "Authorized field filling completed. Review the retained browser; submission remains manual." : preview.reason),
   );
   const grid = createNode("div", "preview-grid");
   grid.append(
@@ -343,15 +347,14 @@ function renderApplicationPreview() {
     previewField("Application status", label(preview.job?.application_status)),
   );
   const safety = createNode("ul", "safety-list");
-  safety.append(
-    createNode("li", "", "Browser not started"),
-    createNode("li", "", "Workflow not run"),
-    createNode("li", "", "No fields filled"),
-    createNode("li", "", "No files uploaded"),
-    createNode("li", "", "Submission unavailable"),
-    createNode("li", "", "External authorization required"),
-  );
+  const safetyItems = hasActiveSession
+    ? ["Browser review active", "Workflow completed", "Authorized fields filled", "Submission unavailable", "Manual review required", "Timed cleanup enabled"]
+    : ["Browser not started", "Workflow not run", "No fields filled", "No files uploaded", "Submission unavailable", "External authorization required"];
+  safety.append(...safetyItems.map((item) => createNode("li", "", item)));
   const children = [heading, grid, safety];
+  if (preview.review_session?.active) {
+    children.push(reviewSessionPanel(preview));
+  }
   if (preview.status === "READY" && preview.authorization?.token) {
     const authorization = createNode("section", "launch-authorization");
     authorization.append(
@@ -385,6 +388,45 @@ function renderApplicationPreview() {
   replaceChildren(elements.previewContent, children);
 }
 
+function reviewSessionPanel(preview) {
+  const session = createNode("section", "active-review-session");
+  session.append(
+    createNode("strong", "", "Active review session"),
+    createNode("p", "", "The filled application browser remains open for your review. Submission is manual."),
+    createNode("span", "session-expiry", `Automatic cleanup in about ${preview.review_session.expires_in_seconds} seconds.`),
+  );
+  const close = createNode("button", "session-close", "Close review session");
+  close.type = "button";
+  close.addEventListener("click", async () => {
+    close.disabled = true;
+    await closeReviewSession(preview.job_id);
+  });
+  session.append(close);
+  return session;
+}
+
+async function closeReviewSession(jobId) {
+  try {
+    const response = await fetch(`/api/jobs/${jobId}/review-session/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation: "CLOSE_REVIEW_SESSION" }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Review session could not be closed.");
+    if (state.preview) state.preview.review_session = null;
+    renderApplicationPreview();
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice success";
+    elements.reviewNotice.textContent = "Browser review session closed. Application submission status was not changed.";
+    await refresh();
+  } catch (error) {
+    elements.reviewNotice.hidden = false;
+    elements.reviewNotice.className = "review-notice error";
+    elements.reviewNotice.textContent = error instanceof Error ? error.message : "Review session could not be closed.";
+  }
+}
+
 async function launchApplication(preview, button, checkbox) {
   state.launching = true;
   button.disabled = true;
@@ -402,7 +444,11 @@ async function launchApplication(preview, button, checkbox) {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || payload.reason || "Application launch was blocked.");
-    if (state.preview) state.preview.authorization = null;
+    if (state.preview) {
+      state.preview.authorization = null;
+      state.preview.review_session = payload.review_session;
+      renderApplicationPreview();
+    }
     const result = createNode("section", "launch-result success");
     result.append(
       createNode("strong", "", label(payload.status)),

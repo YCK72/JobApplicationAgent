@@ -135,6 +135,7 @@ tbody tr:hover { background: #fbfcfe; }
 .review-reason { display: block; max-width: 300px; color: var(--muted); font-size: .72rem; line-height: 1.4; }
 .review-history { display: block; margin-top: 6px; color: #7b5c18; font-size: .68rem; }
 .review-clear { color: #7d8b9d; font-size: .72rem; }
+.review-session-badge { display: block; width: max-content; margin-bottom: 7px; padding: 4px 7px; border-radius: 999px; color: #106e5e; background: #e7f7f3; font-size: .64rem; font-weight: 800; }
 .resolution-open, .resolution-save, .resolution-cancel { height: 30px; margin-top: 8px; padding: 0 8px; font-size: .68rem; font-weight: 800; }
 .resolution-open, .resolution-save { border-color: var(--blue); color: white; background: var(--blue); }
 .resolution-cancel { border-color: var(--line); color: var(--muted); background: white; }
@@ -194,6 +195,12 @@ tbody tr:hover { background: #fbfcfe; }
 .launch-result span { font-size: .72rem; }
 .launch-result.success { color: #106e5e; border: 1px solid #9edaca; background: #e7f7f3; }
 .launch-result.error { color: #9c3d43; border: 1px solid #efb9be; background: #fdecee; }
+.active-review-session { margin-top: 18px; padding: 16px; border: 1px solid #91d4c3; border-radius: 11px; background: #e7f7f3; }
+.active-review-session strong { display: block; color: #106e5e; font-size: .88rem; }
+.active-review-session p { margin: 6px 0; color: #175f54; font-size: .78rem; line-height: 1.45; }
+.session-expiry { display: block; color: #39786e; font-size: .7rem; }
+.session-close { margin-top: 12px; color: #106e5e; border-color: #78c4b2; background: white; font-weight: 800; }
+.session-close:hover { background: #d8f2eb; }
 .empty-state { padding: 54px 20px; text-align: center; }
 .empty-state strong, .empty-state span { display: block; }
 .empty-state span { margin-top: 6px; color: var(--muted); }

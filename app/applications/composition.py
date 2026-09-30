@@ -62,6 +62,7 @@ from app.applications.validator import (
 )
 from app.applications.workflow import (
     ApplicationWorkflow,
+    ExecutionSessionFactory,
 )
 from app.browser import BrowserSession
 from app.tracking.database import JobDatabase
@@ -176,6 +177,7 @@ def build_application_workflow(
     database: JobDatabase,
     allowed_local_fixture: Path,
     browser_session_factory: BrowserSessionFactory = BrowserSession,
+    execution_session_factory: ExecutionSessionFactory | None = None,
 ) -> ApplicationWorkflow:
     """
     Build the controlled application workflow.
@@ -195,10 +197,12 @@ def build_application_workflow(
 
     Browser inspection remains lazy through the ATS adapter registry.
 
-    Execution uses a lazy ApplicationExecutionSession factory after
-    preparation, inspection, form authorization, and target authorization
-    succeed. Inspection and execution independently request browser
-    sessions from the configured factory; no page is shared between them.
+    Execution uses a lazy execution-session factory after preparation,
+    inspection, form authorization, and target authorization succeed. By
+    default, inspection and execution independently request browser sessions
+    from the configured browser factory; callers may supply another controlled
+    execution-session factory. No page is shared between inspection and
+    execution.
 
     External HTTP/HTTPS mutation remains disabled by default at
     workflow execution time. The workflow caller must explicitly
@@ -225,7 +229,7 @@ def build_application_workflow(
         allowed_local_fixture=allowed_local_fixture,
     )
 
-    def create_execution_session(
+    def create_default_execution_session(
         target_url: str,
     ) -> ApplicationExecutionSession:
         return ApplicationExecutionSession(
@@ -238,7 +242,11 @@ def build_application_workflow(
         inspection_service=inspection_service,
         form_executor=form_executor,
         execution_guard=execution_guard,
-        execution_session_factory=create_execution_session,
+        execution_session_factory=(
+            execution_session_factory
+            if execution_session_factory is not None
+            else create_default_execution_session
+        ),
     )
 
 
@@ -325,6 +333,7 @@ def build_single_job_application_launcher(
     answer_config_path: Path | str = DEFAULT_APPLICATION_ANSWERS_PATH,
     allowed_local_fixture: Path = DEFAULT_LOCAL_EXECUTION_FIXTURE,
     browser_session_factory: BrowserSessionFactory = BrowserSession,
+    execution_session_factory: ExecutionSessionFactory | None = None,
 ) -> SingleJobApplicationLauncher:
     """Compose the exact-ID controlled application launch boundary.
 
@@ -344,6 +353,7 @@ def build_single_job_application_launcher(
         answer_config_path=answer_config_path,
         allowed_local_fixture=allowed_local_fixture,
         browser_session_factory=browser_session_factory,
+        execution_session_factory=execution_session_factory,
     )
 
 
@@ -354,6 +364,7 @@ def build_single_job_application_launcher_from_dependencies(
     answer_config_path: Path | str = DEFAULT_APPLICATION_ANSWERS_PATH,
     allowed_local_fixture: Path = DEFAULT_LOCAL_EXECUTION_FIXTURE,
     browser_session_factory: BrowserSessionFactory = BrowserSession,
+    execution_session_factory: ExecutionSessionFactory | None = None,
 ) -> SingleJobApplicationLauncher:
     """Compose a browser-lazy launcher around shared persistence services."""
 
@@ -364,6 +375,7 @@ def build_single_job_application_launcher_from_dependencies(
         database=database,
         allowed_local_fixture=allowed_local_fixture,
         browser_session_factory=browser_session_factory,
+        execution_session_factory=execution_session_factory,
     )
     coordinator = build_application_run_coordinator(workflow=workflow)
 

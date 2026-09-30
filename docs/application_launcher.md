@@ -56,6 +56,12 @@ regenerated so the dashboard reflects the new state. Human review and manual
 submission remain required. Only the independent submission-confirmation
 service may later record `APPLIED` from supplied evidence.
 
+The command-line launcher closes its managed execution browser when the run
+finishes. Launches initiated from the local dashboard instead use a bounded,
+dedicated review session so the filled browser can remain open for manual
+review. That retained session still has no submission capability and closes on
+explicit request, timeout, or dashboard shutdown.
+
 Greenhouse, Lever, Ashby, and Workday are production-composed ATS adapters. Each adapter
 uses a fresh read-only inspection browser and must return a form whose provider
 and exact job location match the selected target. Ashby additionally requires

@@ -18,6 +18,10 @@ from app.dashboard.application_preview import (
     ApplicationPreviewStatus,
 )
 from app.jobs.models import ApplicationStatus
+from app.dashboard.review_sessions import (
+    ApplicationReviewSessionManager,
+    ReviewSessionSnapshot,
+)
 
 
 EXTERNAL_BROWSER_CONFIRMATION = "AUTHORIZE_EXTERNAL_BROWSER"
@@ -27,6 +31,8 @@ class ApplicationLaunchStatus(str, Enum):
     AUTHORIZATION_DENIED = "AUTHORIZATION_DENIED"
     AUTHORIZATION_EXPIRED = "AUTHORIZATION_EXPIRED"
     PREVIEW_STALE = "PREVIEW_STALE"
+    SESSION_ACTIVE = "SESSION_ACTIVE"
+    SESSION_UNAVAILABLE = "SESSION_UNAVAILABLE"
     NOT_FOUND = "NOT_FOUND"
     NOT_ELIGIBLE = "NOT_ELIGIBLE"
     READY_FOR_REVIEW = "READY_FOR_REVIEW"
@@ -40,6 +46,7 @@ class PreparedApplicationPreview:
     preview: ApplicationPreviewResult
     authorization_token: str | None = None
     authorization_expires_in_seconds: int | None = None
+    review_session: ReviewSessionSnapshot | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +57,7 @@ class ApplicationLaunchResult:
     completed_actions: int = 0
     application_status: ApplicationStatus | None = None
     export_path: Path | None = None
+    review_session: ReviewSessionSnapshot | None = None
 
     @property
     def may_submit(self) -> bool:
@@ -76,6 +84,7 @@ class DashboardApplicationLaunchService:
         token_factory: Callable[[], str] = (
             lambda: secrets.token_urlsafe(32)
         ),
+        review_session_manager: ApplicationReviewSessionManager | None = None,
     ) -> None:
         if authorization_ttl_seconds <= 0:
             raise ValueError("authorization_ttl_seconds must be positive")
@@ -84,13 +93,23 @@ class DashboardApplicationLaunchService:
         self.authorization_ttl_seconds = authorization_ttl_seconds
         self._clock = clock
         self._token_factory = token_factory
+        self.review_session_manager = review_session_manager
         self._grants: dict[str, _AuthorizationGrant] = {}
         self._lock = Lock()
 
     def prepare(self, job_id: int) -> PreparedApplicationPreview:
         preview = self.preview_service.preview(job_id)
+        review_session = self.current_review_session(job_id)
         if preview.status != ApplicationPreviewStatus.READY:
-            return PreparedApplicationPreview(preview=preview)
+            return PreparedApplicationPreview(
+                preview=preview,
+                review_session=review_session,
+            )
+        if review_session is not None:
+            return PreparedApplicationPreview(
+                preview=preview,
+                review_session=review_session,
+            )
 
         token = self._token_factory()
         now = self._clock()
@@ -108,6 +127,7 @@ class DashboardApplicationLaunchService:
             authorization_expires_in_seconds=(
                 self.authorization_ttl_seconds
             ),
+            review_session=review_session,
         )
 
     def launch(
@@ -156,11 +176,72 @@ class DashboardApplicationLaunchService:
                 job_id=job_id,
             )
 
-        launch_result = self.launcher.run(
-            job_id=job_id,
-            allow_external=True,
-        )
+        sessions = self.review_session_manager
+        if sessions is not None and not sessions.reserve(job_id):
+            return ApplicationLaunchResult(
+                status=ApplicationLaunchStatus.SESSION_ACTIVE,
+                reason=(
+                    "This job already has an active or pending browser "
+                    "review session."
+                ),
+                job_id=job_id,
+                review_session=sessions.snapshot(job_id),
+            )
+
+        try:
+            launch_result = self.launcher.run(
+                job_id=job_id,
+                allow_external=True,
+            )
+        except Exception:
+            if sessions is not None:
+                sessions.release(job_id)
+            raise
+
+        if sessions is None:
+            return self._from_launch_result(launch_result)
+        if launch_result.succeeded:
+            if not sessions.claim(job_id):
+                sessions.release(job_id)
+                return ApplicationLaunchResult(
+                    status=ApplicationLaunchStatus.SESSION_UNAVAILABLE,
+                    reason=(
+                        "Authorized fields were populated, but the browser "
+                        "review session could not be retained."
+                    ),
+                    job_id=job_id,
+                    completed_actions=launch_result.completed_actions,
+                    application_status=(
+                        launch_result.job.status
+                        if launch_result.job is not None
+                        else None
+                    ),
+                    export_path=launch_result.export_path,
+                )
+            return self._from_launch_result(
+                launch_result,
+                review_session=sessions.snapshot(job_id),
+            )
+
+        sessions.release(job_id)
         return self._from_launch_result(launch_result)
+
+    def current_review_session(
+        self,
+        job_id: int,
+    ) -> ReviewSessionSnapshot | None:
+        if self.review_session_manager is None:
+            return None
+        return self.review_session_manager.snapshot(job_id)
+
+    def close_review_session(self, job_id: int) -> bool:
+        if self.review_session_manager is None:
+            return False
+        return self.review_session_manager.close(job_id)
+
+    def close_all_review_sessions(self) -> None:
+        if self.review_session_manager is not None:
+            self.review_session_manager.close_all()
 
     @staticmethod
     def _fingerprint(
@@ -193,6 +274,8 @@ class DashboardApplicationLaunchService:
     @staticmethod
     def _from_launch_result(
         result: SingleJobLaunchResult,
+        *,
+        review_session: ReviewSessionSnapshot | None = None,
     ) -> ApplicationLaunchResult:
         try:
             status = ApplicationLaunchStatus(result.status.value)
@@ -207,6 +290,7 @@ class DashboardApplicationLaunchService:
                 result.job.status if result.job is not None else None
             ),
             export_path=result.export_path,
+            review_session=review_session,
         )
 
     @staticmethod

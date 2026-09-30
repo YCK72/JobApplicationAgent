@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1429 passed`
+**Latest verified full regression:** `1442 passed`
 
-**Most recently completed milestone:** **62B — explicit dashboard launch authorization**
+**Most recently completed milestone:** **62C — retained browser review sessions**
 
-**Current development milestone:** **62B — explicit dashboard launch authorization**
+**Current development milestone:** **62C — retained browser review sessions**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -148,7 +148,8 @@ Fill authorized fields
     ↓
 READY_FOR_REVIEW
     ↓
-Close execution browser
+Dashboard: retain execution browser for bounded human review
+CLI: close execution browser
     ↓
 STOP
 ```
@@ -168,6 +169,8 @@ The project uses:
 - `ExternalExecutionGuard`
 
 Inspection and execution are intended to use **separate browser lifecycles**.
+Dashboard execution runs on a dedicated owner thread so the filled browser can
+remain open for bounded human review and later close on that same thread.
 
 `ApplicationExecutionSession` owns one controlled execution lifecycle:
 
@@ -360,7 +363,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1429 passed
+1442 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -390,7 +393,10 @@ eligible preview issues a short-lived, single-use authorization for that exact
 saved job state. The user must check the explicit authorization statement and
 start a separate controlled browser run. Changed, expired, reused, or
 wrong-job authorizations fail closed. A successful run stops at
-`FORM_STARTED` for human review and never submits or records `APPLIED`.
+`FORM_STARTED`, retains one browser for up to fifteen minutes of human review,
+and never submits or records `APPLIED`. The dashboard exposes an explicit
+**Close review session** action; timeout and server shutdown also close every
+retained session.
 See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
 instructions.
 

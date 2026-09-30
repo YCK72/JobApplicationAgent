@@ -12,6 +12,7 @@ from app.dashboard.application_launch import (
     ApplicationLaunchStatus,
     DashboardApplicationLaunchService,
 )
+from app.dashboard.review_sessions import ReviewSessionSnapshot
 from app.dashboard.application_preview import (
     ApplicationPreviewResult,
     ApplicationPreviewStatus,
@@ -56,7 +57,7 @@ def ready_preview(
     )
 
 
-def make_service(*, previews=None, now=None):
+def make_service(*, previews=None, now=None, review_sessions=None):
     preview_service = MagicMock()
     if previews is None:
         preview_service.preview.return_value = ready_preview()
@@ -81,6 +82,7 @@ def make_service(*, previews=None, now=None):
         authorization_ttl_seconds=120,
         clock=clock,
         token_factory=lambda: next(tokens),
+        review_session_manager=review_sessions,
     )
     return service, preview_service, launcher, clock
 
@@ -214,3 +216,79 @@ def test_dashboard_launch_service_exposes_no_submission_capability() -> None:
     assert not hasattr(service, "submit")
     assert not hasattr(service, "confirm_submission")
     assert not hasattr(service, "submission_confirmation_service")
+
+
+def test_successful_launch_claims_retained_review_session() -> None:
+    sessions = MagicMock()
+    sessions.reserve.return_value = True
+    sessions.claim.return_value = True
+    snapshot = ReviewSessionSnapshot(
+        job_id=7,
+        target_url="https://job-boards.greenhouse.io/example/jobs/123",
+        active=True,
+        expires_in_seconds=900,
+    )
+    sessions.snapshot.side_effect = [None, snapshot]
+    service, _, launcher, _ = make_service(review_sessions=sessions)
+    token = service.prepare(7).authorization_token
+
+    result = service.launch(
+        job_id=7,
+        authorization_token=token,
+        confirmation="AUTHORIZE_EXTERNAL_BROWSER",
+    )
+
+    assert result.status == ApplicationLaunchStatus.READY_FOR_REVIEW
+    assert result.review_session.active is True
+    sessions.reserve.assert_called_once_with(7)
+    sessions.claim.assert_called_once_with(7)
+    sessions.release.assert_not_called()
+    launcher.run.assert_called_once_with(job_id=7, allow_external=True)
+
+
+def test_existing_review_session_blocks_second_launch() -> None:
+    sessions = MagicMock()
+    sessions.reserve.return_value = False
+    sessions.snapshot.return_value = None
+    service, _, launcher, _ = make_service(review_sessions=sessions)
+    token = service.prepare(7).authorization_token
+
+    result = service.launch(
+        job_id=7,
+        authorization_token=token,
+        confirmation="AUTHORIZE_EXTERNAL_BROWSER",
+    )
+
+    assert result.status == ApplicationLaunchStatus.SESSION_ACTIVE
+    launcher.run.assert_not_called()
+
+
+def test_failed_launch_releases_review_session_reservation() -> None:
+    sessions = MagicMock()
+    sessions.reserve.return_value = True
+    sessions.snapshot.return_value = None
+    service, _, launcher, _ = make_service(review_sessions=sessions)
+    launcher.run.return_value = SingleJobLaunchResult(
+        status=SingleJobLaunchStatus.BLOCKED,
+        reason="Blocked.",
+        job_id=7,
+    )
+    token = service.prepare(7).authorization_token
+
+    result = service.launch(
+        job_id=7,
+        authorization_token=token,
+        confirmation="AUTHORIZE_EXTERNAL_BROWSER",
+    )
+
+    assert result.status == ApplicationLaunchStatus.BLOCKED
+    sessions.release.assert_called_once_with(7)
+
+
+def test_explicit_close_delegates_to_review_session_manager() -> None:
+    sessions = MagicMock()
+    sessions.close.return_value = True
+    service, _, _, _ = make_service(review_sessions=sessions)
+
+    assert service.close_review_session(7) is True
+    sessions.close.assert_called_once_with(7)

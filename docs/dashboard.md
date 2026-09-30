@@ -104,10 +104,18 @@ launcher and browser.
 The controlled run preserves the existing safety order: preparation,
 inspection, deterministic form authorization, and exact external-target
 authorization must all succeed before the execution browser is created. The
-workflow fills only authorized fields, closes its managed execution session,
-and records `FORM_STARTED` only after a successful run. It cannot click Submit,
-confirm submission, or record `APPLIED`; those remain independent manual and
-post-review actions.
+workflow fills only authorized fields and records `FORM_STARTED` only after a
+successful run. The dashboard then retains that filled execution browser for
+human review. It cannot click Submit, confirm submission, or record `APPLIED`;
+those remain independent manual and post-review actions.
+
+Only one active or pending review browser is allowed for a job. Its browser
+lifecycle and Playwright operations stay on one dedicated owner thread. The
+default review lease is fifteen minutes and can be changed with
+`--review-session-minutes`. Select **Close review session** after finishing the
+manual review. The same cleanup occurs automatically when the lease expires or
+the dashboard server stops. Closing a review session does not change the
+application status or claim that the application was submitted.
 
 The endpoints are:
 
@@ -115,10 +123,13 @@ The endpoints are:
   a fresh authorization token when eligible.
 - `POST /api/jobs/{job_id}/application-launch` for one explicitly confirmed
   controlled run.
+- `POST /api/jobs/{job_id}/review-session/close` with exact close confirmation
+  to release the retained browser without changing application status.
 
 The editable server must bind to `127.0.0.1`, `::1`, or `localhost`. Target
 assignment accepts JSON only and validates the pasted URL through the same
 HTTPS-only application-target resolver used by the application workflow.
-Greenhouse, Lever, Ashby, and Workday are the enabled ATS providers. The dashboard never
-guesses a URL, follows a redirect, opens an execution browser, fills a form, or
-submits an application.
+Greenhouse, Lever, Ashby, and Workday are the enabled ATS providers. The
+dashboard never guesses a URL, follows a redirect, or submits an application.
+It opens and fills an execution browser only after the explicit, fresh,
+exact-job authorization described above.

@@ -34,6 +34,10 @@ from app.dashboard.application_launch import (
     DashboardApplicationLaunchService,
     EXTERNAL_BROWSER_CONFIRMATION,
 )
+from app.dashboard.review_sessions import (
+    ApplicationReviewSessionManager,
+    ReviewSessionSnapshot,
+)
 from app.applications.composition import (
     build_single_job_application_launcher_from_dependencies,
 )
@@ -51,6 +55,7 @@ STATIC_FILES = {
         "text/javascript; charset=utf-8",
     ),
 }
+CLOSE_REVIEW_SESSION_CONFIRMATION = "CLOSE_REVIEW_SESSION"
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -76,6 +81,11 @@ class DashboardServer(ThreadingHTTPServer):
         self.review_resolution_service = review_resolution_service
         self.application_preview_service = application_preview_service
         self.application_launch_service = application_launch_service
+
+    def server_close(self) -> None:
+        if self.application_launch_service is not None:
+            self.application_launch_service.close_all_review_sessions()
+        super().server_close()
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -109,6 +119,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         )
         if match and self.server.application_launch_service is not None:
             self._launch_application(int(match.group(1)))
+            return
+        match = re.fullmatch(
+            r"/api/jobs/([1-9][0-9]*)/review-session/close",
+            path,
+        )
+        if match and self.server.application_launch_service is not None:
+            self._close_review_session(int(match.group(1)))
             return
         self._method_not_allowed()
 
@@ -240,6 +257,19 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     )
                     if resolver is not None:
                         item.update(resolver.apply_latest(job_id, item))
+                    if self.server.application_launch_service is not None:
+                        review_session = (
+                            self.server.application_launch_service
+                            .current_review_session(job_id)
+                        )
+                        item["review_session_active"] = (
+                            review_session is not None
+                        )
+                        item["review_session_expires_in_seconds"] = (
+                            review_session.expires_in_seconds
+                            if review_session is not None
+                            else None
+                        )
             snapshot["metrics"]["review_queue"] = sum(
                 item.get("review_required") is True
                 for item in snapshot["jobs"]
@@ -323,6 +353,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     "may_submit": result.may_submit,
                 },
                 "authorization": authorization,
+                "review_session": self._review_session_payload(
+                    prepared.review_session
+                    if prepared is not None
+                    else None
+                ),
             },
             include_body=include_body,
         )
@@ -395,6 +430,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             ApplicationLaunchStatus.AUTHORIZATION_DENIED: HTTPStatus.FORBIDDEN,
             ApplicationLaunchStatus.AUTHORIZATION_EXPIRED: HTTPStatus.FORBIDDEN,
             ApplicationLaunchStatus.PREVIEW_STALE: HTTPStatus.CONFLICT,
+            ApplicationLaunchStatus.SESSION_ACTIVE: HTTPStatus.CONFLICT,
+            ApplicationLaunchStatus.SESSION_UNAVAILABLE: (
+                HTTPStatus.INTERNAL_SERVER_ERROR
+            ),
             ApplicationLaunchStatus.NOT_FOUND: HTTPStatus.NOT_FOUND,
             ApplicationLaunchStatus.NOT_ELIGIBLE: HTTPStatus.CONFLICT,
             ApplicationLaunchStatus.NEEDS_REVIEW: HTTPStatus.CONFLICT,
@@ -419,9 +458,87 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     else None
                 ),
                 "may_submit": result.may_submit,
+                "review_session": self._review_session_payload(
+                    result.review_session
+                ),
             },
             include_body=True,
         )
+
+    def _close_review_session(self, job_id: int) -> None:
+        if self.headers.get_content_type() != "application/json":
+            self._send_json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"error": "Content-Type must be application/json."},
+                include_body=True,
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 1 <= length <= 8192:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must contain 1-8192 bytes."},
+                include_body=True,
+            )
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError):
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must be valid JSON."},
+                include_body=True,
+            )
+            return
+        confirmation = (
+            payload.get("confirmation")
+            if isinstance(payload, dict)
+            else None
+        )
+        if confirmation != CLOSE_REVIEW_SESSION_CONFIRMATION:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Exact review-session close confirmation is required."},
+                include_body=True,
+            )
+            return
+
+        try:
+            closed = self.server.application_launch_service.close_review_session(
+                job_id
+            )
+        except Exception:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "Review session could not be closed."},
+                include_body=True,
+            )
+            return
+        self._send_json(
+            HTTPStatus.OK if closed else HTTPStatus.NOT_FOUND,
+            {
+                "status": "CLOSED" if closed else "NOT_FOUND",
+                "job_id": job_id,
+                "active": False,
+            },
+            include_body=True,
+        )
+
+    @staticmethod
+    def _review_session_payload(
+        session: ReviewSessionSnapshot | None,
+    ) -> dict[str, Any] | None:
+        if session is None:
+            return None
+        return {
+            "job_id": session.job_id,
+            "target_url": session.target_url,
+            "active": session.active,
+            "expires_in_seconds": session.expires_in_seconds,
+        }
 
     def _assign_application_target(self, job_id: int) -> None:
         content_type = self.headers.get_content_type()
@@ -733,6 +850,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument(
+        "--review-session-minutes",
+        type=float,
+        default=15,
+        help="Minutes to keep a filled browser open for review (default: 15).",
+    )
+    parser.add_argument(
         "--open-browser",
         action="store_true",
         help="Open the dashboard in the default browser after startup.",
@@ -752,13 +875,20 @@ def main(argv: list[str] | None = None) -> int:
             tracker=tracker,
         )
         preview_service = ApplicationPreviewService(database=database)
+        review_session_manager = ApplicationReviewSessionManager(
+            review_ttl_seconds=args.review_session_minutes * 60,
+        )
         launcher = build_single_job_application_launcher_from_dependencies(
             database=database,
             tracker=tracker,
+            execution_session_factory=(
+                review_session_manager.create_execution_session
+            ),
         )
         launch_service = DashboardApplicationLaunchService(
             preview_service=preview_service,
             launcher=launcher,
+            review_session_manager=review_session_manager,
         )
         server = create_dashboard_server(
             reader=TrackerWorkbookReader(args.workbook),

@@ -20,6 +20,7 @@ from app.dashboard.application_launch import (
     ApplicationLaunchStatus,
     PreparedApplicationPreview,
 )
+from app.dashboard.review_sessions import ReviewSessionSnapshot
 from app.dashboard.server import create_dashboard_server
 from app.dashboard.review_queue import build_review_queue_item
 from app.dashboard.review_resolution import (
@@ -336,6 +337,9 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             assert "application-launch" in script
             assert "AUTHORIZE_EXTERNAL_BROWSER" in script
             assert "Authorize and open application" in script
+            assert "review-session/close" in script
+            assert "Active review session" in script
+            assert "Close review session" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()
@@ -768,6 +772,12 @@ def test_preview_issues_authorization_without_launching_workflow(
         preview=preview,
         authorization_token="exact-preview-token",
         authorization_expires_in_seconds=120,
+        review_session=ReviewSessionSnapshot(
+            job_id=7,
+            target_url="https://job-boards.greenhouse.io/example/jobs/123",
+            active=True,
+            expires_in_seconds=900,
+        ),
     )
     server = create_dashboard_server(
         reader=TrackerWorkbookReader(make_workbook(tmp_path)),
@@ -791,6 +801,8 @@ def test_preview_issues_authorization_without_launching_workflow(
             "expires_in_seconds": 120,
             "confirmation": "AUTHORIZE_EXTERNAL_BROWSER",
         }
+        assert payload["review_session"]["active"] is True
+        assert payload["review_session"]["expires_in_seconds"] == 900
         launch_service.prepare.assert_called_once_with(7)
         launch_service.launch.assert_not_called()
     finally:
@@ -810,6 +822,12 @@ def test_application_launch_api_requires_exact_explicit_authorization(
         completed_actions=4,
         application_status=ApplicationStatus.FORM_STARTED,
         export_path=tmp_path / "tracker.xlsx",
+        review_session=ReviewSessionSnapshot(
+            job_id=7,
+            target_url="https://job-boards.greenhouse.io/example/jobs/123",
+            active=True,
+            expires_in_seconds=900,
+        ),
     )
     server = create_dashboard_server(
         reader=TrackerWorkbookReader(make_workbook(tmp_path)),
@@ -840,6 +858,7 @@ def test_application_launch_api_requires_exact_explicit_authorization(
         assert payload["completed_actions"] == 4
         assert payload["application_status"] == "FORM_STARTED"
         assert payload["may_submit"] is False
+        assert payload["review_session"]["active"] is True
         launch_service.launch.assert_called_once_with(
             job_id=7,
             authorization_token="exact-preview-token",
@@ -849,6 +868,94 @@ def test_application_launch_api_requires_exact_explicit_authorization(
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_review_session_close_api_requires_explicit_confirmation(
+    tmp_path: Path,
+) -> None:
+    launch_service = MagicMock()
+    launch_service.close_review_session.return_value = True
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        application_launch_service=launch_service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/review-session/close",
+            method="POST",
+            data=json.dumps({
+                "confirmation": "CLOSE_REVIEW_SESSION",
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+
+        assert response.status == 200
+        assert payload == {
+            "status": "CLOSED",
+            "job_id": 7,
+            "active": False,
+        }
+        launch_service.close_review_session.assert_called_once_with(7)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_review_session_close_rejects_missing_confirmation(
+    tmp_path: Path,
+) -> None:
+    launch_service = MagicMock()
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        application_launch_service=launch_service,
+        host="127.0.0.1",
+        port=0,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/jobs/7/review-session/close",
+            method="POST",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+        )
+        with pytest.raises(HTTPError) as error:
+            urlopen(request, timeout=5)
+
+        assert error.value.code == 400
+        launch_service.close_review_session.assert_not_called()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_dashboard_server_close_cleans_all_review_sessions(
+    tmp_path: Path,
+) -> None:
+    launch_service = MagicMock()
+    server = create_dashboard_server(
+        reader=TrackerWorkbookReader(make_workbook(tmp_path)),
+        application_launch_service=launch_service,
+        host="127.0.0.1",
+        port=0,
+    )
+
+    server.server_close()
+
+    launch_service.close_all_review_sessions.assert_called_once_with()
 
 
 def test_application_launch_api_rejects_missing_authorization(
@@ -891,6 +998,7 @@ def test_dashboard_main_composes_preview_and_launch_services(
     tracker = MagicMock()
     preview_service = MagicMock()
     launch_service = MagicMock()
+    review_session_manager = MagicMock()
     http_server = MagicMock(server_port=8765)
     database_builder = MagicMock(return_value=database)
     tracker_builder = MagicMock(return_value=tracker)
@@ -908,6 +1016,14 @@ def test_dashboard_main_composes_preview_and_launch_services(
         dashboard_server,
         "DashboardApplicationLaunchService",
         launch_builder,
+    )
+    session_manager_builder = MagicMock(
+        return_value=review_session_manager
+    )
+    monkeypatch.setattr(
+        dashboard_server,
+        "ApplicationReviewSessionManager",
+        session_manager_builder,
     )
     launcher_builder = MagicMock(return_value=MagicMock())
     monkeypatch.setattr(
@@ -935,9 +1051,18 @@ def test_dashboard_main_composes_preview_and_launch_services(
 
     assert exit_code == 0
     preview_builder.assert_called_once_with(database=database)
-    launcher_builder.assert_called_once_with(
-        database=database,
-        tracker=tracker,
+    assert launcher_builder.call_args.kwargs["database"] is database
+    assert launcher_builder.call_args.kwargs["tracker"] is tracker
+    assert launcher_builder.call_args.kwargs[
+        "execution_session_factory"
+    ] is review_session_manager.create_execution_session
+    session_manager_builder.assert_called_once_with(
+        review_ttl_seconds=900,
+    )
+    launch_builder.assert_called_once_with(
+        preview_service=preview_service,
+        launcher=launcher_builder.return_value,
+        review_session_manager=review_session_manager,
     )
     assert server_builder.call_args.kwargs[
         "application_preview_service"
