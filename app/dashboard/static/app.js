@@ -10,6 +10,7 @@ const state = {
   submissionReview: null, submissionJob: null,
   submissionOutcome: "NOT_SUBMITTED", submissionEvidence: "",
   recordingSubmission: false,
+  discovery: null, searching: false, batchPreparing: false,
 };
 const elements = {
   metrics: document.querySelector("#metrics"),
@@ -44,6 +45,14 @@ const elements = {
   submissionJob: document.querySelector("#submission-job"),
   submissionContent: document.querySelector("#submission-content"),
   submissionClose: document.querySelector("#submission-close"),
+  jobSearchForm: document.querySelector("#job-search-form"),
+  jobSearchQuery: document.querySelector("#job-search-query"),
+  jobSearchLimit: document.querySelector("#job-search-limit"),
+  jobSearchButton: document.querySelector("#job-search-button"),
+  jobSearchResult: document.querySelector("#job-search-result"),
+  batchControls: document.querySelector("#batch-controls"),
+  batchConsent: document.querySelector("#batch-consent"),
+  batchPrepare: document.querySelector("#batch-prepare"),
 };
 
 const metricDefinitions = [
@@ -781,10 +790,100 @@ async function refresh() {
   }
 }
 
+function showSearchResult(message, isError = false) {
+  elements.jobSearchResult.hidden = false;
+  elements.jobSearchResult.className = `finder-result${isError ? " error" : ""}`;
+  elements.jobSearchResult.textContent = message;
+}
+
+async function searchJobs(event) {
+  event.preventDefault();
+  if (state.searching) return;
+  state.searching = true;
+  state.discovery = null;
+  elements.jobSearchButton.disabled = true;
+  elements.jobSearchButton.textContent = "Searching and verifying…";
+  elements.batchControls.hidden = true;
+  elements.batchConsent.checked = false;
+  showSearchResult("Searching current postings and checking whether they still accept applications…");
+  try {
+    const response = await fetch("/api/job-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: elements.jobSearchQuery.value,
+        limit: Number(elements.jobSearchLimit.value),
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Job search failed.");
+    state.discovery = payload;
+    const eligible = Array.isArray(payload.eligible_job_ids) ? payload.eligible_job_ids.length : 0;
+    const warnings = Array.isArray(payload.errors) ? payload.errors.length : 0;
+    showSearchResult(`${payload.processed} current postings processed; ${eligible} eligible for automatic preparation; ${payload.expired_jobs} closed saved postings removed; ${warnings} search warnings.`);
+    elements.batchControls.hidden = eligible === 0;
+    await refresh();
+  } catch (error) {
+    showSearchResult(error instanceof Error ? error.message : "Job search failed.", true);
+  } finally {
+    state.searching = false;
+    elements.jobSearchButton.disabled = false;
+    elements.jobSearchButton.textContent = "Search jobs";
+  }
+}
+
+async function prepareEligibleApplications() {
+  if (state.batchPreparing || !elements.batchConsent.checked) return;
+  const jobIds = state.discovery?.eligible_job_ids;
+  if (!Array.isArray(jobIds) || jobIds.length === 0) return;
+  state.batchPreparing = true;
+  elements.batchPrepare.disabled = true;
+  elements.batchConsent.disabled = true;
+  let prepared = 0;
+  const stopped = [];
+  for (let index = 0; index < jobIds.length; index += 1) {
+    const jobId = jobIds[index];
+    elements.batchPrepare.textContent = `Preparing ${index + 1} of ${jobIds.length}…`;
+    try {
+      const previewResponse = await fetch(`/api/jobs/${jobId}/application-preview`, { cache: "no-store" });
+      const preview = await previewResponse.json();
+      if (!previewResponse.ok || preview.status !== "READY" || !preview.authorization?.token) {
+        throw new Error(preview.reason || preview.error || "Application needs review.");
+      }
+      const launchResponse = await fetch(`/api/jobs/${jobId}/application-launch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authorization_token: preview.authorization.token,
+          confirmation: "AUTHORIZE_EXTERNAL_BROWSER",
+        }),
+      });
+      const launch = await launchResponse.json();
+      if (!launchResponse.ok) throw new Error(launch.reason || launch.error || "Application preparation stopped.");
+      prepared += 1;
+    } catch (error) {
+      stopped.push(`${jobId}: ${error instanceof Error ? error.message : "needs review"}`);
+    }
+  }
+  const suffix = stopped.length ? ` ${stopped.length} moved or remained in review.` : "";
+  showSearchResult(`${prepared} applications were filled and left open for your review.${suffix} No application was submitted.`, stopped.length > 0);
+  state.batchPreparing = false;
+  elements.batchConsent.disabled = false;
+  elements.batchConsent.checked = false;
+  elements.batchPrepare.disabled = true;
+  elements.batchPrepare.textContent = "Prepare eligible applications";
+  await refresh();
+}
+
 for (const control of [elements.search, elements.status, elements.category, elements.method, elements.review, elements.sort]) {
   control.addEventListener(control === elements.search ? "input" : "change", renderTable);
 }
 elements.refresh.addEventListener("click", refresh);
+elements.jobSearchForm.addEventListener("submit", searchJobs);
+elements.batchConsent.addEventListener("change", () => {
+  elements.batchPrepare.disabled = !elements.batchConsent.checked || state.batchPreparing;
+});
+elements.batchPrepare.addEventListener("click", prepareEligibleApplications);
 elements.historyOutcome.addEventListener("change", renderReviewHistory);
 elements.historyKind.addEventListener("change", renderReviewHistory);
 elements.historyClose.addEventListener("click", () => {

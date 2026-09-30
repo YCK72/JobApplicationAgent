@@ -28,6 +28,37 @@
     <div id="warning" class="warning" role="status" hidden></div>
     <div id="review-notice" class="review-notice" role="status" hidden></div>
 
+    <section class="finder" aria-labelledby="finder-title">
+      <div class="finder-copy">
+        <p class="eyebrow">FIND NEW JOBS</p>
+        <h2 id="finder-title">Search and prepare applications</h2>
+        <p>Search verified LinkedIn postings. Closed listings are removed before they reach your active queue.</p>
+      </div>
+      <form id="job-search-form" class="finder-form">
+        <label class="finder-query">
+          <span>What are you looking for?</span>
+          <input id="job-search-query" type="search" minlength="3" maxlength="200" required placeholder="Entry-level software engineer in Seattle">
+        </label>
+        <label>
+          <span>Results</span>
+          <select id="job-search-limit">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="10">10</option>
+          </select>
+        </label>
+        <button id="job-search-button" type="submit">Search jobs</button>
+      </form>
+      <div id="job-search-result" class="finder-result" aria-live="polite" hidden></div>
+      <div id="batch-controls" class="batch-controls" hidden>
+        <label>
+          <input id="batch-consent" type="checkbox">
+          <span>I authorize opening and filling every eligible application listed by this search. I will review and submit each application myself.</span>
+        </label>
+        <button id="batch-prepare" type="button" disabled>Prepare eligible applications</button>
+      </div>
+    </section>
+
     <section aria-labelledby="overview-title">
       <div class="section-heading">
         <div>

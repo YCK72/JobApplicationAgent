@@ -7,11 +7,11 @@ A safety-first, local Python system for discovering, filtering, scoring, routing
 ## Current Project Status
 
 **Branch:** `main`  
-**Latest verified full regression:** `1461 passed`
+**Latest verified full regression:** `1471 passed`
 
-**Most recently completed milestone:** **62D — dashboard submission outcome recording**
+**Most recently completed milestone:** **63 — Windows desktop launcher and dashboard discovery**
 
-**Current development status:** **Feature-complete safety-first assisted workflow**
+**Current development status:** **Desktop-ready safety-first assisted workflow**
 
 The repository is intentionally not a fully autonomous submission bot. The current architecture fills only explicitly authorized fields and **stops before final submission**.
 
@@ -369,7 +369,7 @@ pytest -q
 The latest verified result is:
 
 ```text
-1461 passed
+1471 passed
 ```
 
 A different count after later commits is normal. Never claim a test count without actually running the suite.
@@ -409,6 +409,24 @@ nonblank evidence. Unconfirmed attempts become `SUBMISSION_UNCONFIRMED`, and
 `NOT_SUBMITTED` leaves the lifecycle unchanged. This boundary cannot operate
 the browser or submit an application.
 See [docs/dashboard.md](docs/dashboard.md) for PyCharm and custom-path
+instructions.
+
+### Windows executable
+
+The packaged desktop build is available locally at:
+
+```text
+dist\JobApplicationAgent\JobApplicationAgent.exe
+```
+
+Double-click the executable to start the loopback dashboard and open it in
+Brave. The dashboard includes bounded job discovery and explicit batch
+preparation for eligible applications. Closed postings are filtered before
+they enter the active queue. Supported applications are filled and left open
+for human review; account creation, CAPTCHA, unsupported flows, sensitive
+unanswered questions, and final submission remain manual.
+
+See [docs/desktop_app.md](docs/desktop_app.md) for usage and reproducible build
 instructions.
 
 ### 9. Discover jobs into the live tracker

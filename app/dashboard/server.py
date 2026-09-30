@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 from typing import Any
 from urllib.parse import urlsplit
@@ -51,6 +52,9 @@ from app.applications.composition import (
 from app.jobs.composition import build_job_pipeline
 from app.tracking.database import DEFAULT_DB_PATH, JobDatabase
 from app.tracking.excel_tracker import ExcelTracker
+from app.browser import BraveNotFoundError, find_brave_executable
+from app.discovery.production import build_persistent_discovery_runner
+from app.dashboard.job_search import DashboardJobSearchService
 
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -83,6 +87,7 @@ class DashboardServer(ThreadingHTTPServer):
         submission_recording_service: (
             DashboardSubmissionRecordingService | None
         ),
+        job_search_service: DashboardJobSearchService | None,
     ) -> None:
         super().__init__(server_address, request_handler)
         self.reader = reader
@@ -92,6 +97,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.application_preview_service = application_preview_service
         self.application_launch_service = application_launch_service
         self.submission_recording_service = submission_recording_service
+        self.job_search_service = job_search_service
 
     def server_close(self) -> None:
         if self.application_launch_service is not None:
@@ -110,6 +116,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
+        if path == "/api/job-search" and self.server.job_search_service is not None:
+            self._search_jobs()
+            return
         match = re.fullmatch(
             r"/api/jobs/([1-9][0-9]*)/application-target",
             path,
@@ -321,6 +330,64 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             snapshot,
             include_body=include_body,
         )
+
+    def _search_jobs(self) -> None:
+        if self.headers.get_content_type() != "application/json":
+            self._send_json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"error": "Content-Type must be application/json."},
+                include_body=True,
+            )
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if not 1 <= length <= 4096:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must contain 1-4096 bytes."},
+                include_body=True,
+            )
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError):
+            payload = None
+        if not isinstance(payload, dict):
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Request body must be a JSON object."},
+                include_body=True,
+            )
+            return
+        try:
+            result = self.server.job_search_service.search(
+                query=payload.get("query"),
+                limit=payload.get("limit", 5),
+            )
+        except ValueError as exc:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": str(exc)},
+                include_body=True,
+            )
+            return
+        except RuntimeError as exc:
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {"error": str(exc)},
+                include_body=True,
+            )
+            return
+        except Exception:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {"error": "Job discovery failed. Check the API key and connection."},
+                include_body=True,
+            )
+            return
+        self._send_json(HTTPStatus.OK, result.as_dict(), include_body=True)
 
     def _serve_application_preview(
         self,
@@ -910,6 +977,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self.server.target_review_service is not None
                 or self.server.review_resolution_service is not None
                 or self.server.application_launch_service is not None
+                or self.server.submission_recording_service is not None
+                or self.server.job_search_service is not None
             )
             else "GET, HEAD"
         )
@@ -982,6 +1051,7 @@ def create_dashboard_server(
     submission_recording_service: (
         DashboardSubmissionRecordingService | None
     ) = None,
+    job_search_service: DashboardJobSearchService | None = None,
 ) -> DashboardServer:
     if not isinstance(port, int) or not 0 <= port <= 65535:
         raise ValueError("port must be an integer from 0 to 65535")
@@ -993,6 +1063,7 @@ def create_dashboard_server(
             or review_resolution_service is not None
             or application_launch_service is not None
             or submission_recording_service is not None
+            or job_search_service is not None
         )
         and host.strip().lower() not in {"127.0.0.1", "::1", "localhost"}
     ):
@@ -1008,7 +1079,19 @@ def create_dashboard_server(
         application_preview_service=application_preview_service,
         application_launch_service=application_launch_service,
         submission_recording_service=submission_recording_service,
+        job_search_service=job_search_service,
     )
+
+
+def open_dashboard_browser(url: str, preference: str) -> bool:
+    if preference == "brave":
+        try:
+            executable = find_brave_executable()
+        except BraveNotFoundError:
+            return webbrowser.open(url)
+        subprocess.Popen([str(executable), url])
+        return True
+    return webbrowser.open(url)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1044,6 +1127,12 @@ def main(argv: list[str] | None = None) -> int:
         "--open-browser",
         action="store_true",
         help="Open the dashboard in the default browser after startup.",
+    )
+    parser.add_argument(
+        "--dashboard-browser",
+        choices=("default", "brave"),
+        default="default",
+        help="Browser used for the dashboard when --open-browser is set.",
     )
     args = parser.parse_args(argv)
 
@@ -1085,6 +1174,14 @@ def main(argv: list[str] | None = None) -> int:
             runner=submission_runner,
             active_session_lookup=review_session_manager.snapshot,
         )
+        job_search_service = DashboardJobSearchService(
+            runner_builder=lambda query, limit: build_persistent_discovery_runner(
+                query=query,
+                max_results=limit,
+                database_path=args.database,
+                export_path=args.workbook,
+            )
+        )
         server = create_dashboard_server(
             reader=TrackerWorkbookReader(args.workbook),
             host=args.host,
@@ -1094,6 +1191,7 @@ def main(argv: list[str] | None = None) -> int:
             application_preview_service=preview_service,
             application_launch_service=launch_service,
             submission_recording_service=submission_recording_service,
+            job_search_service=job_search_service,
         )
     except (OSError, ValueError) as exc:
         print(f"Dashboard could not start: {exc}", file=sys.stderr)
@@ -1111,7 +1209,7 @@ def main(argv: list[str] | None = None) -> int:
     print("Press Ctrl+C to stop.")
 
     if args.open_browser:
-        webbrowser.open(url)
+        open_dashboard_browser(url, args.dashboard_browser)
 
     try:
         server.serve_forever()
