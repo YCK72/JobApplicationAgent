@@ -379,7 +379,7 @@ def test_invalid_or_oversized_response(body):
         ComposioSearchClient(api_key="test-key", opener=opener).search("query")
 
 
-def test_existing_pipeline_persists_and_deduplicates(tmp_path):
+def test_existing_pipeline_refreshes_linkedin_pre_application_record(tmp_path):
     from scripts.smoke_test_live_discovery_pipeline import build_pipeline
     from app.tracking.database import JobDatabase
     from app.jobs.pipeline import PipelineOutcome
@@ -389,6 +389,7 @@ def test_existing_pipeline_persists_and_deduplicates(tmp_path):
     first = runner.run()
     second = runner.run()
     assert first.discovered_count == 1 and not first.errors
-    assert second.pipeline_results[0].outcome == PipelineOutcome.DUPLICATE
+    assert second.pipeline_results[0].outcome == first.pipeline_results[0].outcome
+    assert second.pipeline_results[0].outcome != PipelineOutcome.DUPLICATE
     assert len(database.get_all_jobs()) == 1
     assert first.pipeline_results[0].job.status != ApplicationStatus.APPLIED

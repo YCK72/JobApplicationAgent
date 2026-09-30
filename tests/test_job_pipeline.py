@@ -848,6 +848,41 @@ def test_duplicate_linkedin_job_enriches_missing_application_target(
     )
 
 
+def test_duplicate_linkedin_job_refreshes_stale_pre_application_result(
+    pipeline,
+    database,
+):
+    source_url = "https://www.linkedin.com/jobs/view/67890"
+    first = make_job(
+        url=source_url,
+        description="Recent graduates only.",
+    )
+    first.source = "linkedin_composio"
+
+    first_result = pipeline.process(first)
+
+    assert first_result.outcome == PipelineOutcome.MANUAL_REVIEW
+    assert first_result.job_id is not None
+    assert "Graduation requirement" in (first_result.job.notes or "")
+
+    refreshed = make_job(
+        url=source_url,
+        description="Build Python backend services.",
+    )
+    refreshed.source = "linkedin_composio"
+
+    result = pipeline.process(refreshed)
+
+    assert result.outcome == PipelineOutcome.MANUAL_REVIEW
+    assert result.job_id == first_result.job_id
+    assert len(database.get_all_jobs()) == 1
+    stored = database.get_job_by_id(first_result.job_id)
+    assert stored is not None
+    assert stored.description == "Build Python backend services."
+    assert "Graduation requirement" not in (stored.notes or "")
+    assert "No verified supported ATS application target" in (stored.notes or "")
+
+
 def test_tracking_parameter_duplicate_is_detected(
     pipeline,
     database,

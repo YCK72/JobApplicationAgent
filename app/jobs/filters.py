@@ -111,6 +111,15 @@ class JobFilter:
             if str(value).strip()
         )
 
+        self.us_location_aliases = tuple(
+            self._normalize_text(value)
+            for value in location_config.get(
+                "us_location_aliases",
+                [],
+            )
+            if str(value).strip()
+        )
+
         self.excluded_location_signals = tuple(
             self._normalize_text(value)
             for value in location_config.get(
@@ -683,7 +692,7 @@ class JobFilter:
                 )
 
         # Explicit United States aliases.
-        for alias in self.country_aliases:
+        for alias in self.country_aliases + self.us_location_aliases:
             if self._contains_phrase(
                 normalized,
                 alias,

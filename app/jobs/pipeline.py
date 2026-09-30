@@ -181,20 +181,21 @@ class JobPipeline:
         return self._process(job, existing_job_id=job_id)
 
     @staticmethod
-    def _may_enrich_application_target(
+    def _may_refresh_linkedin_job(
         *,
         incoming: Job,
         existing: Job | None,
+        duplicate_reason: DuplicateReason | None,
     ) -> bool:
         return (
             existing is not None
             and incoming.source == "linkedin_composio"
             and existing.source == "linkedin_composio"
-            and incoming.application_url is not None
-            and existing.application_url is None
+            and duplicate_reason == DuplicateReason.URL
             and existing.status
             in {
                 ApplicationStatus.DISCOVERED,
+                ApplicationStatus.FILTERED_OUT,
                 ApplicationStatus.NEEDS_REVIEW,
                 ApplicationStatus.NEEDS_APPLICATION,
                 ApplicationStatus.READY_TO_APPLY,
@@ -226,27 +227,24 @@ class JobPipeline:
 
         if duplicate_result.is_duplicate:
             matched_job = duplicate_result.matched_job
-            if self._may_enrich_application_target(
+            if self._may_refresh_linkedin_job(
                 incoming=job,
                 existing=matched_job,
+                duplicate_reason=duplicate_result.reason,
             ):
                 if duplicate_job_id is None or matched_job is None:
                     raise RuntimeError(
-                        "Duplicate target enrichment lost persisted identity."
+                        "LinkedIn refresh lost persisted identity."
                     )
-                enriched = matched_job.model_copy(
+                refreshed = job.model_copy(
                     update={
-                        "application_url": job.application_url,
-                        "description": job.description,
-                        "date_posted": job.date_posted,
+                        "application_url": (
+                            job.application_url or matched_job.application_url
+                        ),
+                        "date_found": matched_job.date_found,
                     }
                 )
-                self._append_note(
-                    enriched,
-                    "Application target: exact supported ATS target was "
-                    "resolved during rediscovery.",
-                )
-                return self.reprocess(duplicate_job_id, enriched)
+                return self.reprocess(duplicate_job_id, refreshed)
             reason_text = (
                 duplicate_result.reason.value
                 if duplicate_result.reason

@@ -56,6 +56,7 @@ class JobEligibilityGate:
         r"without (?:current or future |now or future |visa |employment )?sponsorship"
         r"|(?:do not|cannot|can't|will not|unable to) (?:provide |offer )?(?:visa |employment )?sponsor(?:ship| visas?)?"
         r"|(?:visa |employment )?sponsorship (?:is |will be )?not (?:available|provided|offered)"
+        r"|ineligible for (?:employment )?(?:visa )?sponsorship"
         r"|no (?:visa |employment )?sponsorship(?: (?:is )?(?:available|provided|offered))?"
         r"|must not require (?:visa |employment )?sponsorship"
     )
@@ -194,7 +195,15 @@ class JobEligibilityGate:
             elif self.requires_sponsorship is None:
                 review("Posting prohibits sponsorship; candidate sponsorship need is unknown")
 
-        graduation_signal = re.search(r"graduation|graduat(?:e|ing) (?:between|by|in|before|after)|recent(?:ly)? (?:completed|graduates?)", text)
+        graduation_signal = re.search(
+            r"graduation(?: date)?\s*(?::\s*)?"
+            r"(?:between|by|in|before|after|"
+            + self.MONTH_PATTERN
+            + r"|fall|spring|summer|winter|20\d{2})\b"
+            r"|graduat(?:e|ing) (?:between|by|in|before|after)\b"
+            r"|recent graduates? only\b",
+            text,
+        )
         if graduation_signal:
             windows = {
                 (

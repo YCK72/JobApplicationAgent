@@ -13,6 +13,7 @@ def role_config():
                 "titles": [
                     "Software Engineer",
                     "Software Engineer I",
+                    "Software Dev Engineer",
                     "Backend Engineer",
                     "Full Stack Engineer",
                 ],
@@ -152,6 +153,14 @@ def test_exact_sde_title(classifier):
 
     assert result.category == JobCategory.SDE
     assert result.confidence == 1.0
+
+
+def test_software_dev_engineer_title_beats_recruiting_department_text(classifier):
+    result = classifier.classify(
+        make_job("Software Dev Engineer I, Amazon University Talent Acquisition")
+    )
+
+    assert result.category == JobCategory.SDE
 
 
 def test_exact_ai_ml_title(classifier):

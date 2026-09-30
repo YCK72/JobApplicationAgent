@@ -72,6 +72,23 @@ def test_uncertain_graduation_wording_is_review(text):
     assert gate().evaluate(job(text)).status == EligibilityStatus.NEEDS_REVIEW
 
 
+def test_request_to_state_graduation_date_is_not_a_requirement():
+    result = gate().evaluate(job(
+        "Please state your availability and graduation date clearly. "
+        "Individuals completing or recently completed a degree are welcome."
+    ))
+
+    assert result.status == EligibilityStatus.CLEAR
+
+
+def test_ineligible_for_visa_sponsorship_is_a_confirmed_mismatch():
+    result = gate(requires_sponsorship=True).evaluate(job(
+        "This position is ineligible for employment Visa sponsorship."
+    ))
+
+    assert result.status == EligibilityStatus.INELIGIBLE
+
+
 def test_missing_graduation_fact_is_review():
     assert JobEligibilityGate({}).evaluate(job("Graduation date between May 2026 and August 2026.")).status == EligibilityStatus.NEEDS_REVIEW
 

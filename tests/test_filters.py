@@ -20,6 +20,9 @@ def role_config():
                 "U.S.",
                 "U.S.A.",
             ],
+            "us_location_aliases": [
+                "San Francisco Bay Area",
+            ],
             "allow_us_states": True,
             "allow_remote_us": True,
             "allow_unknown": False,
@@ -551,6 +554,7 @@ def test_existing_notes_are_preserved(
         "United States",
         "Remote - United States",
         "Remote, USA",
+        "San Francisco Bay Area",
     ],
 )
 def test_us_locations_are_allowed(
