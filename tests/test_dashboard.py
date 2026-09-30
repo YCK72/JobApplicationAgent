@@ -315,6 +315,8 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             html = response.read().decode("utf-8")
             assert response.status == 200
             assert "Job Application Dashboard" in html
+            assert 'id="auto-prepare-consent"' in html
+            assert "open and fill every eligible application" in html
 
         with urlopen(base_url + "/api/jobs", timeout=5) as response:
             payload = json.load(response)
@@ -350,6 +352,8 @@ def test_http_server_exposes_ui_api_and_health(tmp_path: Path) -> None:
             assert "submission-recording" in script
             assert "Record result" in script
             assert "independently observed" in script
+            assert "autoPrepareConsent" in script
+            assert "await prepareEligibleApplications()" in script
             assert "innerHTML" not in script
     finally:
         server.shutdown()

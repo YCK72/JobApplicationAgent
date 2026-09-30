@@ -50,6 +50,7 @@ const elements = {
   jobSearchLimit: document.querySelector("#job-search-limit"),
   jobSearchButton: document.querySelector("#job-search-button"),
   jobSearchResult: document.querySelector("#job-search-result"),
+  autoPrepareConsent: document.querySelector("#auto-prepare-consent"),
   batchControls: document.querySelector("#batch-controls"),
   batchConsent: document.querySelector("#batch-consent"),
   batchPrepare: document.querySelector("#batch-prepare"),
@@ -799,12 +800,13 @@ function showSearchResult(message, isError = false) {
 async function searchJobs(event) {
   event.preventDefault();
   if (state.searching) return;
+  const autoPrepareAuthorized = elements.autoPrepareConsent.checked;
   state.searching = true;
   state.discovery = null;
   elements.jobSearchButton.disabled = true;
   elements.jobSearchButton.textContent = "Searching and verifying…";
   elements.batchControls.hidden = true;
-  elements.batchConsent.checked = false;
+  elements.batchConsent.checked = autoPrepareAuthorized;
   showSearchResult("Searching current postings and checking whether they still accept applications…");
   try {
     const response = await fetch("/api/job-search", {
@@ -823,6 +825,9 @@ async function searchJobs(event) {
     showSearchResult(`${payload.processed} current postings processed; ${eligible} eligible for automatic preparation; ${payload.expired_jobs} closed saved postings removed; ${warnings} search warnings.`);
     elements.batchControls.hidden = eligible === 0;
     await refresh();
+    if (eligible > 0 && autoPrepareAuthorized) {
+      await prepareEligibleApplications();
+    }
   } catch (error) {
     showSearchResult(error instanceof Error ? error.message : "Job search failed.", true);
   } finally {

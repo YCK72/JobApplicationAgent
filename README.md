@@ -430,8 +430,10 @@ Double-click the executable to start the loopback dashboard and open it in
 Brave. The dashboard includes bounded job discovery and explicit batch
 preparation for eligible applications. Closed postings are filtered before
 they enter the active queue. Supported applications are filled and left open
-for human review; account creation, CAPTCHA, unsupported flows, sensitive
-unanswered questions, and final submission remain manual.
+for human review. One search-time authorization can automatically prepare every
+eligible result without a second dashboard action. Account creation, CAPTCHA,
+unsupported flows, sensitive unanswered questions, and final submission remain
+explicit handoffs.
 
 See [docs/desktop_app.md](docs/desktop_app.md) for usage and reproducible build
 instructions.

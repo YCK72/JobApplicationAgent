@@ -13,9 +13,14 @@ The first launch creates a private SQLite database and Excel tracker inside the 
 ## Search and prepare
 
 1. Enter a request such as `entry level software engineer in Seattle`.
-2. Select a bounded result count and choose **Search jobs**.
+2. Select a bounded result count. To automate preparation, select **After this
+   search, automatically open and fill every eligible application**, then
+   choose **Search jobs**.
 3. The discovery pipeline verifies LinkedIn availability, removes closed postings, deduplicates jobs, applies candidate eligibility and sponsorship rules, scores fit, and refreshes the tracker.
-4. If the search returns eligible automatic applications, read and select the batch authorization, then choose **Prepare eligible applications**.
+4. With search-time authorization enabled, each eligible application is opened,
+   filled, and left at the review boundary automatically. Without it, select
+   the batch authorization after search and choose **Prepare eligible
+   applications**.
 
 Each eligible application receives its own fresh preview authorization. Supported forms are filled and left open for review. Applications that require an account, CAPTCHA, an unsupported step, or an unanswered sensitive question stop and remain in the review queue.
 
