@@ -19,7 +19,8 @@ class Settings(BaseModel):
     daily_limit: int = Field(default=25, ge=1, le=500)
     report_hour: int = Field(default=18, ge=0, le=23)
     timezone: str = 'America/Los_Angeles'
-    model: str = os.environ.get('OPENAI_MODEL', 'gpt-4.1-mini')
+    gemini_model: str = os.environ.get('GEMINI_MODEL', 'gemini-3.1-flash-lite')
+    groq_model: str = os.environ.get('GROQ_MODEL', 'openai/gpt-oss-20b')
     tailor_resumes: bool = True
     interactive_handoff: bool = False
     handoff_timeout_seconds: int = Field(default=180, ge=30, le=900)

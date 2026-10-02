@@ -1,13 +1,20 @@
 # Connection setup
 
-## OpenAI
+## Gemini and Groq
 
-1. Create an API key in your OpenAI API account with API billing enabled.
-2. Open the local dashboard, Settings, and save it in the OpenAI key field.
-   Alternatively run `.venv/Scripts/python.exe -m agent.cli set-key OPENAI_API_KEY`.
-3. The default model is `gpt-4.1-mini`. Change the model in Settings if your API account uses
-   another Responses/Structured Outputs-compatible model. ChatGPT subscriptions do not supply
-   credentials to this standalone application. No keys should be pasted into GitHub or chat.
+1. Create a Gemini API key at [Google AI Studio](https://aistudio.google.com/apikey).
+2. Save it in Settings > Gemini API key (job filtering).
+3. Create a Groq API key at [Groq Console](https://console.groq.com/keys).
+4. Save it in Settings > Groq API key (application answers).
+5. Keep the filtering model `gemini-3.1-flash-lite` and application model `openai/gpt-oss-20b`,
+   or select compatible structured-output models available to your accounts. Save settings.
+6. Restart the application after upgrading. API keys are stored in the OS credential vault.
+
+OpenAI API billing is not required. The OpenAI Python SDK is used only as a client for the
+Google and Groq endpoints. Free tiers have rate and quota limits; check each provider's console.
+Gemini free-tier inputs may be used to improve Google products. Both providers receive the
+profile facts and resume text needed for their task. No inbox text is sent to these models.
+Never paste keys into GitHub or chat.
 
 ## Gmail API
 
@@ -29,7 +36,7 @@ requirements for your project and selected Gmail scopes. The app reports refresh
 Verification uses messages received after the current application started, addressed to the
 profile email, from the platform's configured domain, with aligned passing DKIM/DMARC results
 and the company name in the message. Ambiguous codes/links and unsupported
-senders need review. No general inbox text is sent to OpenAI.
+senders need review. No general inbox text is sent to Gemini and Groq.
 
 ## Candidate profile
 
@@ -124,3 +131,18 @@ live validation; no universal Workday, LinkedIn or Indeed coverage is claimed.
 Initial HTTP 429 responses respect a bounded Retry-After delay and allow one retry before any
 submission. Repeated rate limits stop for later review. Submission attempts are never blindly
 repeated after an uncertain result.
+
+
+## Gemini filtering and Groq application setup
+
+1. Create a Gemini key at https://aistudio.google.com/apikey and save it in Settings > Gemini API key.
+2. Create a Groq key at https://console.groq.com/keys and save it in Settings > Groq API key.
+3. Save the separate Gemini filtering and Groq application model settings. OpenAI credentials are no longer used.
+4. Restart the application after upgrading. Resume autopilot only after both keys and current resumes are ready.
+
+Gemini evaluates entry-level relevance, US eligibility, sponsorship and fit against your profile.
+Groq composes supported application answers and resume section ordering; the browser still executes forms.
+Both responses are validated, and candidate facts and commitments are never invented. Provider rate limits
+stop the cycle and disable autopilot. Jobs not yet attempted remain queued; uncertain submissions require review.
+Free tiers have quotas; Gemini free-tier data may be used to improve Google products. Review provider terms
+before sending resumes and profile details.

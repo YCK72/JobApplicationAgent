@@ -2,7 +2,7 @@ import json
 import re
 from typing import Literal
 
-from openai import OpenAI
+from openai import OpenAI, APIError, RateLimitError
 from pydantic import BaseModel, Field
 
 from .config import secret, settings
@@ -26,22 +26,40 @@ class Answer(BaseModel):
     reason: str
 
 
-def client():
-    key = secret('OPENAI_API_KEY')
+class ProviderUnavailable(NeedsReview):
+    """A provider-wide failure must stop the cycle, not reject every job."""
+
+
+def client(provider='groq'):
+    endpoints = {
+        'gemini': ('GEMINI_API_KEY', 'https://generativelanguage.googleapis.com/v1beta/openai/'),
+        'groq': ('GROQ_API_KEY', 'https://api.groq.com/openai/v1'),
+    }
+    name, endpoint = endpoints[provider]
+    key = secret(name)
     if not key:
-        raise NeedsReview('Configure an OpenAI API key in Settings')
-    return OpenAI(api_key=key, timeout=45, max_retries=2)
+        raise ProviderUnavailable(f'Configure {provider.title()} API key in Settings')
+    return OpenAI(api_key=key, base_url=endpoint, timeout=45, max_retries=2)
 
 
-def structured(schema, instructions, payload):
-    response = client().responses.parse(
-        model=settings().model, store=False, max_output_tokens=2000,
-        input=[{'role': 'system', 'content': instructions},
-               {'role': 'user', 'content': json.dumps(payload)}],
-        text_format=schema)
-    if response.output_parsed is None:
-        raise NeedsReview('AI could not produce a validated answer')
-    return response.output_parsed
+def structured(schema, instructions, payload, provider='groq'):
+    config = settings()
+    model = config.gemini_model if provider == 'gemini' else config.groq_model
+    try:
+        completion = client(provider).beta.chat.completions.parse(
+            model=model, max_tokens=4096,
+            messages=[{'role': 'system', 'content': instructions},
+                      {'role': 'user', 'content': json.dumps(payload)}],
+            response_format=schema)
+    except RateLimitError:
+        raise ProviderUnavailable(f'{provider.title()} rate limit or quota reached. Check provider usage/credits, then resume.') from None
+    except APIError as exc:
+        # Never expose raw provider payloads, candidate details, or credentials in logs.
+        raise ProviderUnavailable(f'{provider.title()} API unavailable (HTTP {getattr(exc, "status_code", None) or "connection"}). Check the key, model and provider status.') from None
+    message = completion.choices[0].message if completion.choices else None
+    if message is None or message.parsed is None or message.refusal:
+        raise NeedsReview(f'{provider.title()} could not produce a validated answer')
+    return schema.model_validate(message.parsed)
 
 
 def fit(job, profile):
@@ -62,7 +80,7 @@ def fit(job, profile):
     Existing role metadata may differ; actual resume contents take precedence.
     Return an honest fit score and concise reason.
     Do not assume a degree, publication, employment title or date beyond the documents.''',
-        {'job': job, 'profile': profile})
+        {'job': job, 'profile': profile}, provider='gemini')
 
 
 def saved_answer(label, answers):

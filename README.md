@@ -22,7 +22,7 @@ If Python is available through the Windows `py` launcher instead of `python`, ru
 execution policy for the current terminal: `Set-ExecutionPolicy -Scope Process Bypass`.
 
 Open the dashboard, save your actual candidate facts, import current resume PDFs, and save
-an OpenAI API key. Configure sources and limits, then run a cycle or enable autopilot.
+Gemini and Groq API keys. Configure sources and limits, then run a cycle or enable autopilot.
 After initial setup, you can also launch **Open Job Application Agent.cmd**.
 
 See **[How to use](HOW_TO_USE.md)** for the complete workflow and
@@ -100,3 +100,18 @@ API references: [Greenhouse](https://docs.greenhouse.io/job-board.html),
 and [TOTP](https://www.rfc-editor.org/rfc/rfc6238).
 
 Icons: Lucide, ISC license; bundled license in `static/LUCIDE-LICENSE`.
+
+
+## Gemini filtering and Groq application setup
+
+1. Create a Gemini key at https://aistudio.google.com/apikey and save it in Settings > Gemini API key.
+2. Create a Groq key at https://console.groq.com/keys and save it in Settings > Groq API key.
+3. Save the separate Gemini filtering and Groq application model settings. OpenAI credentials are no longer used.
+4. Restart the application after upgrading. Resume autopilot only after both keys and current resumes are ready.
+
+Gemini evaluates entry-level relevance, US eligibility, sponsorship and fit against your profile.
+Groq composes supported application answers and resume section ordering; the browser still executes forms.
+Both responses are validated, and candidate facts and commitments are never invented. Provider rate limits
+stop the cycle and disable autopilot. Jobs not yet attempted remain queued; uncertain submissions require review.
+Free tiers have quotas; Gemini free-tier data may be used to improve Google products. Review provider terms
+before sending resumes and profile details.

@@ -35,10 +35,10 @@ function render(){
  $('worker').textContent=state.worker;
  $('auto').innerHTML=icon(state.settings.enabled?'pause':'play')+`<span>${state.settings.enabled?'Pause autopilot':'Enable autopilot'}</span>`;
  for(const [id,status] of [['applied','applied'],['review','needs_review'],['queued','queued']]) $('count-'+id).textContent=state.jobs.filter(j=>j.status===status).length;
- const missing=[!state.connections.openai&&'OpenAI',!state.profile.email&&'Candidate profile',!Object.values(state.resumes).some(r=>r.enabled&&r.exists)&&'Resume'].filter(Boolean);
+ const missing=[!state.connections.gemini&&'Gemini',!state.connections.groq&&'Groq',!state.profile.email&&'Candidate profile',!Object.values(state.resumes).some(r=>r.enabled&&r.exists)&&'Resume'].filter(Boolean);
  $('setup-banner').hidden=!missing.length;
  $('setup-text').textContent=missing.join(' and ')+' not connected. Autopilot is paused.';
- $('key-state').textContent=state.connections.openai?'API key saved':'No API key saved';
+ $('key-state').textContent=state.connections.gemini?'Gemini key saved':'No Gemini key saved'; $('groq-state').textContent=state.connections.groq?'Groq key saved':'No Groq key saved';
  $('gmail-state').textContent=state.connections.gmail?'Gmail authorized':state.connections.gmail_client?'OAuth client ready. Connect your Gmail account.':'OAuth client missing: secrets/gmail-client.json';
  $('adzuna-state').textContent=state.connections.adzuna?'Credentials saved':'Not configured';
  const labels={name:'Name',email:'Email',phone:'Phone',location:'Location',linkedin:'LinkedIn',github:'GitHub',work_authorization:'Work authorization',preferences:'Preferences'};
@@ -54,7 +54,7 @@ function render(){
   $('handoff').checked=state.settings.interactive_handoff; $('handoff-timeout').value=state.settings.handoff_timeout_seconds;
   $('tailor').checked=state.settings.tailor_resumes; $('review-tech').checked=state.settings.review_large_tech;
   $('limit').value=state.settings.daily_limit;$('interval').value=state.settings.interval_minutes;$('hour').value=state.settings.report_hour;
-  $('timezone').value=state.settings.timezone;$('model').value=state.settings.model;
+  $('timezone').value=state.settings.timezone;$('model').value=state.settings.gemini_model;$('groq-model').value=state.settings.groq_model;
   $('companies').value=state.settings.review_companies.join('\n');$('sources').value=JSON.stringify(state.settings.sources,null,2);settingsLoaded=true;
  }
  renderJobs();icons();
@@ -81,13 +81,14 @@ $('open-settings').onclick=()=>view('settings');
 $('add').onclick=()=>$('add-dialog').showModal();
 for(const [id,cmd] of [['discover','discover'],['empty-discover','discover'],['run','run'],['report','report']]) $(id).onclick=action(async()=>{await api('commands/'+cmd,{});notify(cmd==='report'?'Report queued.':'Worker command queued.');await refresh();});
 $('auto').onclick=action(async()=>{await api('settings',{...state.settings,enabled:!state.settings.enabled});notify(state.settings.enabled?'Autopilot paused.':'Autopilot enabled.');await refresh();});
-$('key-form').onsubmit=action(async()=>{await api('credentials',{name:'OPENAI_API_KEY',value:$('api-key').value});$('api-key').value='';notify('API key saved in your system credential vault.');await refresh();});
-$('adzuna-form').onsubmit=action(async()=>{await api('credentials',{name:'ADZUNA_APP_ID',value:$('adzuna-id').value});await api('credentials',{name:'ADZUNA_APP_KEY',value:$('adzuna-key').value});$('adzuna-id').value='';$('adzuna-key').value='';notify('Job search credentials saved.');await refresh();});
+$('key-form').onsubmit=action(async()=>{await api('credentials',{name:'GEMINI_API_KEY',value:$('api-key').value});$('api-key').value='';notify('API key saved in your system credential vault.');await refresh();});
+$('groq-form').onsubmit=action(async()=>{await api('credentials',{name:'GROQ_API_KEY',value:$('groq-key').value});$('groq-key').value='';notify('Groq key saved.');await refresh();});
+ $('adzuna-form').onsubmit=action(async()=>{await api('credentials',{name:'ADZUNA_APP_ID',value:$('adzuna-id').value});await api('credentials',{name:'ADZUNA_APP_KEY',value:$('adzuna-key').value});$('adzuna-id').value='';$('adzuna-key').value='';notify('Job search credentials saved.');await refresh();});
 $('account-form').onsubmit=action(async()=>{await api('account',{site:$('account-site').value,password:$('account-password').value});$('account-password').value='';notify('Account password saved.');});
 $('gmail').onclick=action(async()=>{await api('gmail/connect',{});notify('Gmail sign-in opened in your browser.');});
 $('settings-form').onsubmit=action(async()=>{
  const sources=JSON.parse($('sources').value);if(!Array.isArray(sources))throw Error('Job sources must be a JSON array.');
- await api('settings',{...state.settings,interactive_handoff:$('handoff').checked,handoff_timeout_seconds:Number($('handoff-timeout').value),tailor_resumes:$('tailor').checked,review_large_tech:$('review-tech').checked,daily_limit:Number($('limit').value),interval_minutes:Number($('interval').value),report_hour:Number($('hour').value),timezone:$('timezone').value,model:$('model').value,review_companies:$('companies').value.split('\n').map(x=>x.trim()).filter(Boolean),sources});
+ await api('settings',{...state.settings,interactive_handoff:$('handoff').checked,handoff_timeout_seconds:Number($('handoff-timeout').value),tailor_resumes:$('tailor').checked,review_large_tech:$('review-tech').checked,daily_limit:Number($('limit').value),interval_minutes:Number($('interval').value),report_hour:Number($('hour').value),timezone:$('timezone').value,gemini_model:$('model').value,groq_model:$('groq-model').value,review_companies:$('companies').value.split('\n').map(x=>x.trim()).filter(Boolean),sources});
  settingsLoaded=false;notify('Settings saved.');await refresh();
 });
 $('add-form').onsubmit=action(async event=>{await api('jobs',Object.fromEntries(new FormData(event.target)));event.target.reset();$('add-dialog').close();notify('Job added to the queue.');await refresh();});

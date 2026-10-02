@@ -55,7 +55,7 @@ def state():
             'profile': {k: v for k, v in p.items() if k != 'resumes'},
             'resumes': {k: {'enabled': v.get('enabled'), 'role': v.get('role'), 'placeholder': v.get('placeholder', False),
                            'exists': Path(v['path']).is_file()} for k, v in p.get('resumes', {}).items()},
-            'connections': {'openai': bool(secret('OPENAI_API_KEY')), 'gmail': bool(secret('GMAIL_TOKEN')),
+            'connections': {'gemini': bool(secret('GEMINI_API_KEY')), 'groq': bool(secret('GROQ_API_KEY')), 'gmail': bool(secret('GMAIL_TOKEN')),
                             'gmail_client': (ROOT / 'secrets/gmail-client.json').exists(),
                             'adzuna': bool(secret('ADZUNA_APP_ID') and secret('ADZUNA_APP_KEY'))}}
 
@@ -66,8 +66,8 @@ def change_settings(value: Settings):
         ZoneInfo(value.timezone)
     except Exception:
         raise HTTPException(422, 'Invalid timezone')
-    if value.enabled and not (profile().get('email') and any(r.get('enabled') and Path(r.get('path', '')).is_file() for r in profile().get('resumes', {}).values()) and secret('OPENAI_API_KEY')):
-        raise HTTPException(409, 'Save a candidate profile, import an enabled resume, and connect OpenAI before enabling automation')
+    if value.enabled and not (profile().get('email') and any(r.get('enabled') and Path(r.get('path', '')).is_file() for r in profile().get('resumes', {}).values()) and secret('GEMINI_API_KEY') and secret('GROQ_API_KEY')):
+        raise HTTPException(409, 'Save a candidate profile, import an enabled resume, and connect Gemini and Groq before enabling automation')
     write_json(DATA / 'settings.json', value.model_dump())
     if not value.enabled:
         worker.pause.set()
@@ -81,7 +81,7 @@ class KeyInput(BaseModel):
 
 @app.post('/api/credentials')
 def credentials(value: KeyInput):
-    if value.name not in {'OPENAI_API_KEY', 'ADZUNA_APP_ID', 'ADZUNA_APP_KEY', 'APIFY_TOKEN'}:
+    if value.name not in {'GEMINI_API_KEY', 'GROQ_API_KEY', 'ADZUNA_APP_ID', 'ADZUNA_APP_KEY', 'APIFY_TOKEN'}:
         raise HTTPException(422, 'Unsupported credential')
     set_secret(value.name, value.value.strip())
     return {'ok': True}

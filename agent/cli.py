@@ -19,7 +19,7 @@ def main():
     auth = commands.add_parser('gmail-auth')
     auth.add_argument('--client', type=Path, default=Path('secrets/gmail-client.json'))
     key = commands.add_parser('set-key')
-    key.add_argument('name', choices=['OPENAI_API_KEY', 'ADZUNA_APP_ID', 'ADZUNA_APP_KEY', 'APIFY_TOKEN'])
+    key.add_argument('name', choices=['GEMINI_API_KEY', 'GROQ_API_KEY', 'ADZUNA_APP_ID', 'ADZUNA_APP_KEY', 'APIFY_TOKEN'])
     commands.add_parser('export')
     commands.add_parser('serve')
     args = parser.parse_args()

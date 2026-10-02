@@ -48,7 +48,7 @@ def test_major_tech_can_apply_without_gmail(job, monkeypatch):
     from test_worker import prepare, fit
     import agent.worker as work
     worker=prepare(monkeypatch,fit(large_tech_company=True))
-    monkeypatch.setattr(work,'secret', lambda name: 'key' if name=='OPENAI_API_KEY' else None)
+    monkeypatch.setattr(work,'secret', lambda name: 'key' if name in ('GEMINI_API_KEY', 'GROQ_API_KEY') else None)
     monkeypatch.setattr(work.BrowserApplicant,'apply',lambda *args: 'evidence/confirmed.png')
     worker.cycle(config.Settings())
     assert db.get(job['id'])['status'] == 'applied'

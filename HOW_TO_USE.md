@@ -40,7 +40,7 @@ in Settings if you prefer to submit the original PDF.
 
 ## 3. Connect services
 
-**Required:** save an OpenAI API key under Settings. Configure an available compatible model
+**Required:** save Gemini and Groq API keys under Settings. Configure an available compatible model
 if needed. API usage is billed separately from the software.
 
 **Optional:**
@@ -102,7 +102,7 @@ Set your daily limit, interval, timezone, optional company-review list and tailo
 Choose **Discover jobs** to populate the queue without applying. The play button beside it runs
 one application cycle. **Enable autopilot** runs recurring discovery and application cycles.
 
-Autopilot requires a saved profile/email, an enabled imported resume and an OpenAI key.
+Autopilot requires a saved profile/email, an enabled imported resume and an Gemini and Groq key.
 Gmail is optional. API/provider costs depend on usage; the daily limit counts submission attempts,
 not model requests or discovery requests. Your PC must stay awake, online and running the server.
 
@@ -151,7 +151,7 @@ discovery errors and report delivery. Optional Gmail reports are scheduled while
 
 | Symptom | What to check |
 | --- | --- |
-| Autopilot cannot be enabled | Saved candidate email, enabled readable resume, OpenAI key |
+| Autopilot cannot be enabled | Saved candidate email, enabled readable resume, Gemini and Groq key |
 | No jobs found | Actual board slugs, configured search sources, Activity errors |
 | Form does not advance | Screenshot, required choices, unsupported widgets; inspect before retrying |
 | Verification unavailable | Gmail connection, matching profile email, authenticated company message and supported destination |
@@ -162,3 +162,18 @@ discovery errors and report delivery. Optional Gmail reports are scheduled while
 
 Workday variants, LinkedIn Easy Apply, Indeed and repeated experience widgets require live
 validation and can still need manual steps. Tests cover controlled forms, not universal live ATS support.
+
+
+## Gemini filtering and Groq application setup
+
+1. Create a Gemini key at https://aistudio.google.com/apikey and save it in Settings > Gemini API key.
+2. Create a Groq key at https://console.groq.com/keys and save it in Settings > Groq API key.
+3. Save the separate Gemini filtering and Groq application model settings. OpenAI credentials are no longer used.
+4. Restart the application after upgrading. Resume autopilot only after both keys and current resumes are ready.
+
+Gemini evaluates entry-level relevance, US eligibility, sponsorship and fit against your profile.
+Groq composes supported application answers and resume section ordering; the browser still executes forms.
+Both responses are validated, and candidate facts and commitments are never invented. Provider rate limits
+stop the cycle and disable autopilot. Jobs not yet attempted remain queued; uncertain submissions require review.
+Free tiers have quotas; Gemini free-tier data may be used to improve Google products. Review provider terms
+before sending resumes and profile details.

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from . import ai, db, discovery, gmail, reports, tailoring
 from .browser import BrowserApplicant
-from .config import DATA, profile, secret, settings
+from .config import DATA, profile, secret, settings, write_json
 from .policy import NeedsReview, coarse_reject, major_company
 
 
@@ -86,9 +86,8 @@ class Worker:
 
     def cycle(self, config):
         p = profile()
-        if not p.get('email') or not any(r.get('enabled') for r in p.get('resumes', {}).values()) or not secret('OPENAI_API_KEY'):
-            raise NeedsReview('Import a profile and configure OpenAI before running applications')
-        ai.client().models.retrieve(config.model)
+        if not p.get('email') or not any(r.get('enabled') for r in p.get('resumes', {}).values()) or not secret('GEMINI_API_KEY') or not secret('GROQ_API_KEY'):
+            raise NeedsReview('Import a profile and configure Gemini and Groq before running applications')
         self.state = 'Discovering jobs'
         discovery.discover(config)
         today = datetime.now(ZoneInfo(config.timezone)).date()
@@ -132,6 +131,14 @@ class Worker:
                 db.update(job['id'], status='applied', reason='Confirmed by application site',
                           applied_at=db.now(), evidence=evidence)
                 db.event('Application confirmed', job['id'])
+            except ai.ProviderUnavailable as exc:
+                current = db.get(job['id'])
+                db.update(job['id'], status='needs_review' if current['attempted'] else 'queued', reason=str(exc))
+                paused = settings().model_copy(update={'enabled': False})
+                write_json(DATA / 'settings.json', paused.model_dump())
+                self.pause.set()
+                db.event('Automation paused: ' + str(exc), job['id'])
+                break
             except NeedsReview as exc:
                 db.update(job['id'], status='needs_review', reason=str(exc), questions=json.dumps(exc.questions))
                 db.event('Application needs review', job['id'])
